@@ -1,0 +1,322 @@
+/// Runs `heliodor_core` (RV64GC, one hart) from the harness's `dram`.
+///
+/// The core's memory side is the one the heliodor SoC serves from its L2. A
+/// read of DRAM is accepted with one grant, and the 64-byte line then comes
+/// back as eight granted beats, each the dword the core asks for. A write
+/// waits for its grant. Here the line comes from AXI4 instead, so the core
+/// waits for the memory, however slow it is.
+///
+/// The core caches only the first 32 MB of DRAM. The rest of it is read one
+/// dword at a time, and the host sees what the core writes there at once:
+/// the place for anything the host reads while the program runs, such as
+/// the RTT console.
+///
+/// One access is in flight at a time. When a read and a write are taken in
+/// the same cycle, the write goes to memory first, as in the SoC: a read
+/// never misses a store the core has made.
+///
+/// The memory map is the SoC's: DRAM from 0x8000_0000 (`dut_base`) and the
+/// CLINT at 0x0200_0000. Other addresses read 0 and drop writes.
+module heliodor_top (
+    i_clk: input clock,
+    i_rst: input reset,
+
+    mem: modport $std::axi4_if::<$std::axi4_pkg::<32, 8, 1, 1, 1, 1, 1, 1>>::master,
+) {
+    // The core's data port.
+    var addr    : logic<64>    ;
+    var ren     : logic        ;
+    var req     : logic        ;
+    var grant   : logic        ;
+    var rdata   : logic<64>    ;
+    var waddr   : logic<64>    ;
+    var wgrant  : logic        ;
+    var wen     : logic        ;
+    var wdata   : logic<64> [8];
+    var wstrb   : logic<8>  [8];
+    var wdata_hi: logic<64>    ;
+    var wstrb_hi: logic<8>     ;
+
+    var clint_rdata: logic<64>    ;
+    var timer_irq  : logic     [1];
+    var sw_irq     : logic     [1];
+    var mtime      : logic<64>    ;
+
+    // Without the SoC's L2 nothing pulls a dirty line home before a fetch
+    // reads it, so the core writes its D-cache back on FENCE.I instead
+    // (COHERENT_IFETCH = 0).
+    inst u_core: heliodor::heliodor_core #(
+        COHERENT_IFETCH: 0,
+    ) (
+        clk: i_clk,
+        rst: i_rst,
+        // Fetches from DRAM go through the data port. This one serves only
+        // fetches outside it, which have nothing to read.
+        o_imem_addr      : _       ,
+        i_imem_rdata     : 32'd0   ,
+        o_imem_ren       : _       ,
+        o_iptw_addr      : _       ,
+        o_iptw_req       : _       ,
+        i_iptw_rdata     : 64'd0   ,
+        o_dmem_addr      : addr    ,
+        o_dmem_wdata     : wdata   ,
+        i_dmem_rdata     : rdata   ,
+        i_dmem_rdata_next: 64'd0   ,
+        o_dmem_wen       : wen     ,
+        o_dmem_ren       : ren     ,
+        o_dmem_wstrb     : wstrb   ,
+        o_dmem_wdata_hi  : wdata_hi,
+        o_dmem_wstrb_hi  : wstrb_hi,
+        o_dmem_req       : req     ,
+        i_dmem_grant     : grant   ,
+        o_dmemw_addr     : waddr   ,
+        o_dmemw_req      : _       ,
+        i_dmemw_grant    : wgrant  ,
+        o_dmemw_wb       : _       ,
+        o_dmem_rfo       : _       ,
+        o_dmem_iread     : _       ,
+        // One hart: every line is its own, and nobody else probes it.
+        i_dmem_fill_excl   : 1'b1        ,
+        i_dcache_probe_v   : 1'b0        ,
+        i_dcache_probe_addr: 64'd0       ,
+        i_dcache_probe_self: 1'b0        ,
+        o_dcache_probe_ack : _           ,
+        i_dcache_inv_valid : 1'b0        ,
+        i_dcache_inv_addr  : 64'd0       ,
+        i_dcache_inv2_valid: 1'b0        ,
+        i_dcache_inv2_addr : 64'd0       ,
+        i_irq_timer_m      : timer_irq[0],
+        i_mtime            : mtime       ,
+        i_irq_sw_m         : sw_irq[0]   ,
+        i_irq_ext_m        : 1'b0        ,
+        i_irq_ext_s        : 1'b0        ,
+    );
+
+    // The core caches only the 32 MB from 0x8000_0000.
+    let in_cached : logic = addr[63:25] == 39'h40;
+    let in_dram   : logic = addr[31];
+    let in_dram_w : logic = waddr[31];
+    let in_clint  : logic = addr[31:24] == 8'h02;
+    let in_clint_w: logic = waddr[31:24] == 8'h02;
+
+    inst u_clint: heliodor::clint #(
+        N_HARTS: 1,
+    ) (
+        clk        : i_clk                                          ,
+        rst        : i_rst                                          ,
+        i_addr     : if wen && in_clint_w ? waddr[15:0] : addr[15:0],
+        i_wdata    : wdata[waddr[5:3]]                              ,
+        i_wen      : wen && in_clint_w,
+        i_ren      : ren && in_clint,
+        o_rdata    : clint_rdata                                    ,
+        o_timer_irq: timer_irq                                      ,
+        o_sw_irq   : sw_irq                                         ,
+        o_mtime    : mtime                                          ,
+    );
+
+    enum State: logic<4> {
+        Idle,
+        Aw,
+        W,
+        B,
+        Ar,
+        R,
+        Stream,
+        Give,
+    }
+
+    var state  : State        ;
+    var beat   : logic<3>     ;
+    var raddr  : logic<29>    ; // the dword a read starts at
+    var rd_one : logic        ; // the read is one dword, not a line
+    var rd_wait: logic        ; // a read is taken and waits for a write
+    var rbuf   : logic<64> [8];
+    var wline  : logic<26>    ;
+    var wbuf   : logic<64> [8];
+    var wstb   : logic<8>  [8];
+    var hi_wait: logic        ; // a store runs into the next line
+    var hi_data: logic<64>    ;
+    var hi_strb: logic<8>     ;
+
+    let idle: logic    = state == State::Idle;
+    let lane: logic<3> = waddr[5:3];
+    // A read of the cached part is a line fill: the grant accepts it and the
+    // line follows. A read of DRAM past it is one dword, and the grant comes
+    // with its data, so it is held back until the data is here.
+    let r_line: logic = idle && req && in_cached;
+    let r_one : logic = idle && req && in_dram && !in_cached;
+    let w_take: logic = wen && in_dram_w;
+    // The held-back grant goes only to the read it answers. A load squashed
+    // in the meantime has dropped its request, and the core would hand the
+    // grant to the fetch side, which takes it for the start of a line fill.
+    // A fetch never reads past the cached part, so the address tells them
+    // apart. (`ren` cannot: for this read it follows the grant.)
+    let give: logic = state == State::Give && req && addr[31:3] == raddr;
+
+    always_comb {
+        // In Idle both channels are offered at once. The core may then take
+        // a read and a write in the same cycle; the write is done first.
+        grant  = (idle && req && !r_one) || state == State::Stream || give;
+        wgrant = idle;
+        rdata  = if state == State::Stream ? rbuf[addr[5:3]] : if give ? rbuf[0] : if in_clint ? clint_rdata : 64'd0;
+    }
+
+    always_ff {
+        if_reset {
+            state   = State::Idle;
+            beat    = 0;
+            raddr   = 0;
+            rd_one  = 0;
+            rd_wait = 0;
+            wline   = 0;
+            hi_wait = 0;
+            hi_data = 0;
+            hi_strb = 0;
+            for i in 0..8 {
+                rbuf[i] = 0;
+                wbuf[i] = 0;
+                wstb[i] = 0;
+            }
+        } else {
+            case state {
+                State::Idle: {
+                    if r_line {
+                        raddr  = {addr[31:6], 3'd0};
+                        rd_one = 0;
+                    } else if r_one {
+                        raddr  = addr[31:3];
+                        rd_one = 1;
+                    }
+                    if w_take {
+                        wline = waddr[31:6];
+                        wbuf  = wdata;
+                        wstb  = wstrb;
+                        // The part of a misaligned store past its dword goes
+                        // to the next dword: in this line if there is one.
+                        hi_wait = 0;
+                        if wstrb_hi != 0 {
+                            if lane == 7 {
+                                hi_wait = 1;
+                                hi_data = wdata_hi;
+                                hi_strb = wstrb_hi;
+                            } else {
+                                for b in 0..8 {
+                                    if wstrb_hi[b] {
+                                        wbuf[lane + 1][b * 8+:8] = wdata_hi[b * 8+:8];
+                                    }
+                                }
+                                wstb[lane + 1] = wstrb[lane + 1] | wstrb_hi;
+                            }
+                        }
+                        rd_wait = r_line || r_one;
+                        state   = State::Aw;
+                    } else if r_line || r_one {
+                        state = State::Ar;
+                    }
+                }
+                State::Aw: {
+                    if mem.awaddr_ack() {
+                        beat  = 0;
+                        state = State::W;
+                    }
+                }
+                State::W: {
+                    if mem.wdata_ack() {
+                        beat += 1;
+                        if beat == 7 {
+                            state = State::B;
+                        }
+                    }
+                }
+                State::B: {
+                    if mem.bresp_ack() {
+                        if hi_wait {
+                            hi_wait = 0;
+                            wline   = wline + 1;
+                            for i in 1..8 {
+                                wstb[i] = 0;
+                            }
+                            wbuf[0] = hi_data;
+                            wstb[0] = hi_strb;
+                            state   = State::Aw;
+                        } else if rd_wait {
+                            rd_wait = 0;
+                            state   = State::Ar;
+                        } else {
+                            state = State::Idle;
+                        }
+                    }
+                }
+                State::Ar: {
+                    if mem.araddr_ack() {
+                        beat  = 0;
+                        state = State::R;
+                    }
+                }
+                State::R: {
+                    if mem.rdata_ack() {
+                        rbuf[beat] =  mem.rdata;
+                        beat       += 1;
+                        if rd_one {
+                            state = State::Give;
+                        } else if beat == 7 {
+                            state = State::Stream;
+                        }
+                    }
+                }
+                State::Stream: {
+                    beat += 1;
+                    if beat == 7 {
+                        state = State::Idle;
+                    }
+                }
+                State::Give: {
+                    // Answered, or nobody waits for it any more.
+                    state = State::Idle;
+                }
+                default: {
+                    state = State::Idle;
+                }
+            }
+        }
+    }
+
+    always_comb {
+        mem.awvalid  = state == State::Aw;
+        mem.awaddr   = {wline, 6'd0};
+        mem.awsize   = $std::axi4_config::axsize_variants::BYTES_PER_TRANSFER_8;
+        mem.awburst  = $std::axi4_config::axburst_variants::INCREMENTING_BURST;
+        mem.awcache  = 0;
+        mem.awprot   = 0;
+        mem.awid     = 0;
+        mem.awlen    = 7;
+        mem.awlock   = 0;
+        mem.awqos    = 0;
+        mem.awregion = 0;
+        mem.awuser   = 0;
+
+        // Every lane goes out; one the store does not touch has no strobe.
+        mem.wvalid = state == State::W;
+        mem.wlast  = beat == 7;
+        mem.wdata  = wbuf[beat];
+        mem.wstrb  = wstb[beat];
+        mem.wuser  = 0;
+
+        mem.bready = state == State::B;
+
+        mem.arvalid  = state == State::Ar;
+        mem.araddr   = {raddr, 3'd0};
+        mem.arsize   = $std::axi4_config::axsize_variants::BYTES_PER_TRANSFER_8;
+        mem.arburst  = $std::axi4_config::axburst_variants::INCREMENTING_BURST;
+        mem.arcache  = 0;
+        mem.arprot   = 0;
+        mem.arid     = 0;
+        mem.arlen    = if rd_one ? 0 : 7;
+        mem.arlock   = 0;
+        mem.arqos    = 0;
+        mem.arregion = 0;
+        mem.aruser   = 0;
+
+        mem.rready = state == State::R;
+    }
+}

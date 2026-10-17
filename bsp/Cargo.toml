@@ -1,0 +1,17 @@
+[package]
+name        = "heliodor-bsp"
+description = "Startup, console and exit for heliodor under veryl-harness or QEMU"
+
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+riscv      = { version = "0.16.1", features = ["critical-section-single-hart"] }
+riscv-rt   = { version = "0.18.0", features = ["memory", "post-init"] }
+rtt-target = "0.6.2"
+critical-section = "1.2"
+
+[features]
+# Builds for QEMU's `virt` machine instead of the harness (`cargo run-emu`).
+qemu = []

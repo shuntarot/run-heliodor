@@ -1,0 +1,18 @@
+[project]
+name    = "run_heliodor"
+version = "0.1.0"
+
+[build]
+sources    = ["rtl"]
+reset_type = "async_low"
+# heliodor's own test benches hold 32 MB memories, and a dependency is
+# analysed whole, test benches included.
+evaluate_size_limit = 16777216
+
+[dependencies]
+heliodor = { path = "../heliodor" }
+hns      = { git = "https://github.com/shuntarot/uharness", project = "hns", version = "0.6.0" }
+
+[lint.portability]
+# The same test benches load those memories in `initial`.
+allow_in_dependencies = ["initial_assign"]

@@ -1,0 +1,25 @@
+# Firmware for heliodor on the harness. `cargo run -p hello` loads it with
+# `hio cpu boot` and stays on its RTT console.
+[workspace]
+resolver = "2"
+members  = ["bsp", "apps/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+heliodor-bsp = { path = "bsp" }
+
+[profile.dev]
+# opt-level 0 is large and slow, and the simulator runs at tens of kHz.
+opt-level       = 1
+debug           = 2
+overflow-checks = true
+
+[profile.release]
+opt-level     = "s"
+debug         = 2
+lto           = true
+codegen-units = 1

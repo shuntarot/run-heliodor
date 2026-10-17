@@ -1,0 +1,14 @@
+[dut]
+module = "heliodor_top"
+
+[clock.i_clk]
+freq_mhz = 50
+
+# All of memory, from 0x8000_0000, the core's reset vector. The core fetches,
+# loads and stores through it. `hio cpu boot` places each segment by
+# `dut_base`.
+[bundle.mem]
+backing  = "dram"
+aperture = "1M"
+dut_base = 0x8000_0000
+ports    = ["mem"]
