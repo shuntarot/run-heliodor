@@ -36,6 +36,10 @@ dir=$1
 shift
 patterns=${*:-$DEFAULT}
 hio=${HIO:-hio}
+if ! "$hio" cpu boot --help 2>/dev/null | grep -q -- --timeout; then
+    echo "$hio has no \`cpu boot --timeout\`: build a newer hio from veryl-harness." >&2
+    exit 2
+fi
 
 tests=()
 for p in $patterns; do
@@ -62,7 +66,8 @@ for f in "${tests[@]}"; do
     case $status in
         0)   line="pass     $name"; pass[$suite]=$(( ${pass[$suite]:-0} + 1 )) ;;
         124) line="timeout  $name"; failed=1 ;;
-        *)   line="fail $(printf '%-3s' "$status") $name  $(echo "$log" | grep -v '^  0x\|^ok:' | tail -1)"
+        *)   why=$(echo "$log" | grep -m1 '^error:' || echo "$log" | grep -v '^  0x\|^ok:' | tail -1)
+             line="fail $(printf '%-3s' "$status") $name  $why"
              failed=1 ;;
     esac
     echo "$line"
