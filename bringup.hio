@@ -15,7 +15,7 @@ reset --release
 sleep 300
 
 echo == what the core wrote ==
-# 0x21534e48 ("HNS!"), misa 0x8000000000341181, mhartid 0
+# 0x21534e48 ("HNS!"), misa 0x8000000000141181 (no V), mhartid 0
 read mem 0x1000 6
 # 0x0123456789abcdef (loaded from .rodata), 0xf45f6 (mul/divu),
 # 0x8877665544332211 (byte stores)

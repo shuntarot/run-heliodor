@@ -1,7 +1,7 @@
 # run-heliodor
 
 Runs the [heliodor](https://github.com/dalance/heliodor) RISC-V core (RV64GC,
-out of order) in the Veryl simulator with
+out of order) in the Veryl simulator or on a Xilinx VCU118 with
 [veryl-harness](https://github.com/shuntarot/uharness). The core fetches,
 loads and stores through one memory, which the host fills before the core
 starts.
@@ -12,7 +12,9 @@ its memory port from the harness's `dram` over AXI4 and adds the CLINT.
 ## Requirements
 
 - Veryl, with `veryl-harness` and `hio` from veryl-harness
-- heliodor checked out beside this directory (`../heliodor`)
+- heliodor checked out beside this directory (`../heliodor`), at a version
+  with the `VEC_EN` and `BTB_IDX_W` parameters
+- Vivado and a VCU118 on USB, for the board
 - Rust through rustup, for the firmware (`rust-toolchain.toml` picks the target)
 - `riscv64-unknown-elf-gcc`, for `asm/smoke.S`
 - `qemu-system-riscv64`, to run the firmware without the simulator
@@ -27,6 +29,24 @@ hio run bringup.hio        # in another terminal
 
 `bringup.hio` loads `asm/smoke.elf` (`make -C asm`), runs it, and reads back
 what it wrote. The expected values are in its comments.
+
+On the VCU118, generate into another directory and point `hio` at it:
+
+```bash
+veryl harness gen --target xilinx/vcu118 -o hns/vcu118
+make -C hns/vcu118/syn
+hio --regs hns/vcu118/regs.json program
+hio --regs hns/vcu118/regs.json run bringup.hio
+```
+
+The core is cut down to fit one FPGA (no vector unit, a 512-entry BTB) and
+runs at 20 MHz. The same core runs in the simulator. `make` uses Vivado's
+default settings. The build measured here used these directives instead,
+because the full core at 50 MHz did not route without them:
+`synth_design -directive AlternateRoutability`, `opt_design -directive
+Explore`, `place_design -directive SSI_SpreadLogic_high`, `phys_opt_design
+-directive AggressiveExplore`, `route_design -directive AlternateCLBRouting`.
+A build takes about 3 hours.
 
 Firmware in Rust runs with cargo. `hio cpu boot` loads it, connects to its RTT
 console, and exits with its status; Ctrl-A x leaves. If `veryl harness gen`
@@ -59,6 +79,16 @@ The D-cache writes back, so the host does not see what the core stores in the
 first 32 MB until the line leaves the cache (`fence.i` writes back all of it,
 `cbo.clean` one line). Anything the host reads while the program runs goes
 past it; `bsp/memory.x` puts the `.console` section there.
+
+## Size
+
+LUT and FF counts, block RAM in 36 Kb blocks, after place and route. The
+core is the DUT alone; the design adds the harness and the board's memory
+controller.
+
+| Target | Clock | Core LUT / FF / BRAM / DSP | Design LUT / FF / BRAM / DSP |
+|---|---|---|---|
+| `xilinx/vcu118` | 20 MHz | 378,323 / 151,017 / 0 / 82 | 399,561 / 173,159 / 25.5 / 85 |
 
 ## Files
 

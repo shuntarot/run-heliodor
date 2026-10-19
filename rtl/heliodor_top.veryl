@@ -45,8 +45,14 @@ module heliodor_top (
     // Without the SoC's L2 nothing pulls a dirty line home before a fetch
     // reads it, so the core writes its D-cache back on FENCE.I instead
     // (COHERENT_IFETCH = 0).
+    //
+    // The core is cut down to fit one FPGA: no vector unit (vector
+    // instructions trap as illegal) and a 512-entry BTB. Simulation uses the
+    // same core, so what runs here is what runs on the board.
     inst u_core: heliodor::heliodor_core #(
         COHERENT_IFETCH: 0,
+        VEC_EN         : 0,
+        BTB_IDX_W      : 9,
     ) (
         clk: i_clk,
         rst: i_rst,
