@@ -12,8 +12,9 @@ its memory port from the harness's `dram` over AXI4 and adds the CLINT.
 ## Requirements
 
 - Veryl, with `veryl-harness` and `hio` from veryl-harness
-- heliodor checked out beside this directory (`../heliodor`), at a version
-  with the `VEC_EN` and `BTB_IDX_W` parameters
+- [shuntarot/heliodor](https://github.com/shuntarot/heliodor) cloned beside
+  this directory (`../heliodor`). It is heliodor with the `VEC_EN` and
+  `BTB_IDX_W` parameters, and it is not published, so it is a path dependency
 - Vivado and a VCU118 on USB, for the board
 - Rust through rustup, for the firmware (`rust-toolchain.toml` picks the target)
 - `riscv64-unknown-elf-gcc`, for `asm/smoke.S`
@@ -88,7 +89,7 @@ controller.
 
 | Target | Clock | Core LUT / FF / BRAM / DSP | Design LUT / FF / BRAM / DSP |
 |---|---|---|---|
-| `xilinx/vcu118` | 20 MHz | 378,323 / 151,017 / 0 / 82 | 399,561 / 173,159 / 25.5 / 85 |
+| `xilinx/vcu118` | 20 MHz | 378,002 / 151,055 / 0 / 82 | 399,199 / 173,141 / 25.5 / 85 |
 
 ## Files
 
@@ -96,6 +97,7 @@ controller.
 |---|---|
 | `rtl/heliodor_top.veryl` | the DUT: heliodor's core with its memory port on AXI4, and the CLINT |
 | `Harness.toml` | where each port goes |
+| `vivado.tcl` | the synthesis directives the VCU118 needs to route (`[vivado] tcl`) |
 | `asm/smoke.S` | the test program (`make -C asm`) |
 | `bsp/` | startup, console (RTT, or the UART on QEMU) and exit for the firmware |
 | `apps/` | the firmware: `hello`, `console` |

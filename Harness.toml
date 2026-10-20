@@ -12,3 +12,7 @@ backing  = "dram"
 aperture = "1M"
 dut_base = 0x8000_0000
 ports    = ["mem"]
+
+# Synthesis directives (see vivado.tcl)
+[vivado]
+tcl = "vivado.tcl"
