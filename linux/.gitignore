@@ -1,0 +1,5 @@
+# Built by make
+/linux.elf
+/Image
+/Image.head
+/heliodor.dtb

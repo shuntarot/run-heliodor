@@ -68,6 +68,23 @@ scripts/riscv-tests.sh <riscv-tests>/share/riscv-tests/isa          # the suites
 scripts/riscv-tests.sh -o results.txt <isa dir> 'rv64ui-p-*'   # or name them
 ```
 
+## Linux
+
+`linux/` boots Linux 5.15 on the VCU118, with its console on RTT. The kernel
+is the one heliodor's own tests boot (`test/hex/linux_dram_real.hex` in
+`../heliodor`), and `linux/fw.S` is a small SBI firmware that writes the
+console to RTT.
+
+```bash
+make -C linux
+hio --regs hns/vcu118/regs.json cpu boot linux/linux.elf
+```
+
+It prints the boot log and powers off (`reboot: Power down`). That kernel has
+no console driver beyond `earlycon`, so its `/init` writes nothing, and there
+is no shell. It needs a heliodor whose first `csrw satp` takes effect at
+once, as the fork's does.
+
 ## Memory
 
 | Address | |
