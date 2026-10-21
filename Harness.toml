@@ -13,6 +13,10 @@ aperture = "1M"
 dut_base = 0x8000_0000
 ports    = ["mem"]
 
+# For `--transport pcie`: the BAR must hold the whole window.
+[pcie]
+bar_bytes = "2M"
+
 # Synthesis directives (see vivado.tcl)
 [vivado]
 tcl = "vivado.tcl"
