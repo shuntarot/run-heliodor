@@ -1,8 +1,8 @@
 /* heliodor's core in the harness: one hart, the CLINT, and memory. No UART
  * and no PLIC: the console is the SBI one, which the firmware puts on RTT.
  *
- * Memory is the 31 MB from the kernel (0x8000_0000) up to the firmware
- * (0x81f0_0000). The cached part of DRAM ends 1 MB above it. */
+ * Memory starts at the kernel (0x8020_0000); below it is the firmware. It
+ * ends at 0x8200_0000, where the cached part of DRAM ends. */
 /dts-v1/;
 
 / {
@@ -12,7 +12,9 @@
 	model = "heliodor on veryl-harness";
 
 	chosen {
-		bootargs = "earlycon=sbi no4lvl nokaslr";
+		/* no4lvl: the core has Sv39 only, but its satp takes any mode, so
+		 * Linux would find Sv57 and Sv48 there. */
+		bootargs = "console=hvc0 earlycon=sbi no4lvl";
 	};
 
 	cpus {
@@ -26,6 +28,11 @@
 			compatible = "riscv";
 			reg = <0>;
 			riscv,isa = "rv64imafdc";
+			/* Linux reads these; it reads riscv,isa only with
+			 * RISCV_ISA_FALLBACK, which tinyconfig leaves out. */
+			riscv,isa-base = "rv64i";
+			riscv,isa-extensions = "i", "m", "a", "f", "d", "c",
+				"zicsr", "zifencei", "zicntr";
 			mmu-type = "riscv,sv39";
 			status = "okay";
 
@@ -37,9 +44,9 @@
 		};
 	};
 
-	memory@80000000 {
+	memory@80200000 {
 		device_type = "memory";
-		reg = <0x0 0x80000000 0x0 0x1f00000>;
+		reg = <0x0 0x80200000 0x0 0x1e00000>;
 	};
 
 	soc {

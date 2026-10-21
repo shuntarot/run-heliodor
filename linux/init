@@ -1,0 +1,12 @@
+#!/bin/sh
+# The first process. The console is hvc0: the SBI console, which the firmware
+# puts on RTT.
+/bin/busybox --install -s
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs dev /dev
+echo "heliodor: $(uname -sr), $(grep -c ^processor /proc/cpuinfo) hart"
+# A shell with job control on the console. Leaving it powers off, which ends
+# `hio cpu boot`.
+setsid cttyhack sh
+poweroff -f

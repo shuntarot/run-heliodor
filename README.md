@@ -13,12 +13,13 @@ its memory port from the harness's `dram` over AXI4 and adds the CLINT.
 
 - Veryl, with `veryl-harness` and `hio` from veryl-harness
 - [shuntarot/heliodor](https://github.com/shuntarot/heliodor) cloned beside
-  this directory (`../heliodor`). It is heliodor with the `VEC_EN` and
-  `BTB_IDX_W` parameters, and it is not published, so it is a path dependency
+  this directory (`../heliodor`); it is not published, so it is a path
+  dependency
 - Vivado and a VCU118 on USB, for the board
 - Rust through rustup, for the firmware (`rust-toolchain.toml` picks the target)
 - `riscv64-unknown-elf-gcc`, for `asm/smoke.S`
 - `qemu-system-riscv64`, to run the firmware without the simulator
+- For Linux: `riscv64-unknown-linux-gnu-gcc`, `dtc` and `curl`
 
 ## Run
 
@@ -41,13 +42,8 @@ hio --regs hns/vcu118/regs.json run bringup.hio
 ```
 
 The core is cut down to fit one FPGA (no vector unit, a 512-entry BTB) and
-runs at 20 MHz. The same core runs in the simulator. `make` uses Vivado's
-default settings. The build measured here used these directives instead,
-because the full core at 50 MHz did not route without them:
-`synth_design -directive AlternateRoutability`, `opt_design -directive
-Explore`, `place_design -directive SSI_SpreadLogic_high`, `phys_opt_design
--directive AggressiveExplore`, `route_design -directive AlternateCLBRouting`.
-A build takes about 3 hours.
+runs at 20 MHz; the same core runs in the simulator. A build takes about
+3 hours.
 
 Firmware in Rust runs with cargo. `hio cpu boot` loads it, connects to its RTT
 console, and exits with its status; Ctrl-A x leaves. If `veryl harness gen`
@@ -70,20 +66,17 @@ scripts/riscv-tests.sh -o results.txt <isa dir> 'rv64ui-p-*'   # or name them
 
 ## Linux
 
-`linux/` boots Linux 5.15 on the VCU118, with its console on RTT. The kernel
-is the one heliodor's own tests boot (`test/hex/linux_dram_real.hex` in
-`../heliodor`), and `linux/fw.S` is a small SBI firmware that writes the
-console to RTT.
+`linux/` builds Linux 6.6 with a busybox shell, and boots it with its
+console on RTT. It downloads the sources into `linux/build/` (checked by
+sha256); `linux/fw.S` is a small SBI firmware that puts the console on RTT.
 
 ```bash
 make -C linux
 hio --regs hns/vcu118/regs.json cpu boot linux/linux.elf
 ```
 
-It prints the boot log and powers off (`reboot: Power down`). That kernel has
-no console driver beyond `earlycon`, so its `/init` writes nothing, and there
-is no shell. It needs a heliodor whose first `csrw satp` takes effect at
-once, as the fork's does.
+The shell is on the console; `exit` powers off. Some commands (`ls`) still
+crash: a core bug, not fixed yet.
 
 ## Memory
 
@@ -114,12 +107,13 @@ controller.
 |---|---|
 | `rtl/heliodor_top.veryl` | the DUT: heliodor's core with its memory port on AXI4, and the CLINT |
 | `Harness.toml` | where each port goes |
-| `vivado.tcl` | the synthesis directives the VCU118 needs to route (`[vivado] tcl`) |
+| `vivado.tcl` | synthesis directives (`[vivado] tcl`) |
 | `asm/smoke.S` | the test program (`make -C asm`) |
 | `bsp/` | startup, console (RTT, or the UART on QEMU) and exit for the firmware |
 | `apps/` | the firmware: `hello`, `console` |
+| `linux/` | Linux and busybox, built and packed with the SBI firmware (`make -C linux`) |
 
-Put paths for your machine in `local.mk`; see `asm/Makefile`.
+Put paths for your machine in `local.mk` (`CROSS`, `LINUX_CROSS`).
 
 ## License
 

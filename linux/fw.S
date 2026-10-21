@@ -6,16 +6,14 @@
  * is at 0x8200_0000, past the 32 MB the core caches, so the host and the
  * core see the same bytes.
  *
- *   0x8000_0000  the kernel Image (the reset PC: its first 8 bytes jump here)
+ *   0x8000_0000  this firmware (the reset PC)
+ *   0x8020_0000  the kernel Image
  *   DTB_ADDR     the device tree
- *   FW_BASE      this firmware
  *   0x8200_0000  the RTT control block and buffers
- *
- * The kernel sits at 0x8000_0000, where heliodor's own tests put it.
  */
 
 #define CLINT_MTIMECMP 0x02004000
-#define KERNEL_ENTRY   0x80000000
+#define KERNEL_ENTRY   0x80200000
 #ifndef DTB_ADDR
 #error "define DTB_ADDR"
 #endif
@@ -73,16 +71,6 @@ _start:
     la   s0, msg_boot
     jal  puts
 
-    /* The reset PC is the kernel's first word, which was patched to jump
-     * here. Put the kernel's own first 8 bytes back, and make the fetch see
-     * them. */
-    li   t0, KERNEL_ENTRY
-    la   t1, kernel_head
-    lw   t2, 0(t1)
-    sw   t2, 0(t0)
-    lw   t2, 4(t1)
-    sw   t2, 4(t0)
-    fence.i
     la   t0, trap
     csrw mtvec, t0
     la   t0, trap_stack_top
@@ -463,8 +451,6 @@ puthex:
     ret
 
     .section .rodata
-kernel_head:
-    .incbin "Image.head"
 msg_boot: .asciz "fw: starting the kernel\n"
 msg_trap: .asciz "\nfw: unexpected trap, mcause 0x"
 msg_strap: .asciz "\nfw: S-mode trap before the kernel's handler, scause 0x"

@@ -1,5 +1,3 @@
-# Built by make
+# Downloads and build output (make)
+/build/
 /linux.elf
-/Image
-/Image.head
-/heliodor.dtb
