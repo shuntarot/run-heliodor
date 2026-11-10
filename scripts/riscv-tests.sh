@@ -4,7 +4,8 @@
 #
 #   scripts/riscv-tests.sh [-t SECONDS] [-o FILE] <isa-dir> [PATTERN...]
 #
-# <isa-dir> is riscv-tests' `share/riscv-tests/isa` after `make install`.
+# <isa-dir> is riscv-tests/build/isa (`make -C riscv-tests`): the tests
+# linked with tohost where the host sees it while the core runs.
 # PATTERN picks tests by file name (shell glob); the default is the suites
 # this core implements, in DEFAULT below. Run it from the repository root,
 # where `hio` finds hns/regs.json; HIO picks another hio binary.
@@ -24,7 +25,7 @@ while getopts "t:o:h" opt; do
     case $opt in
         t) timeout=$OPTARG ;;
         o) out=$OPTARG ;;
-        *) sed -n '2,16s/^# \{0,1\}//p' "$0"; exit 2 ;;
+        *) sed -n '2,17s/^# \{0,1\}//p' "$0"; exit 2 ;;
     esac
 done
 shift $((OPTIND - 1))

@@ -1,0 +1,13 @@
+--- a/v/vm.c
++++ b/v/vm.c
+@@ -277,6 +277,10 @@
+   l1pt[PTES_PER_PT-1] = ((pte_t)kernel_l2pt >> PGSHIFT << PTE_PPN_SHIFT) | PTE_V;
+   kernel_l2pt[PTES_PER_PT-1] = (DRAM_BASE/RISCV_PGSIZE << PTE_PPN_SHIFT) | PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D;
+   user_l2pt[0] = ((pte_t)user_llpt >> PGSHIFT << PTE_PPN_SHIFT) | PTE_V;
++  // tohost lives in the uncached window at DRAM_BASE + 32 MB. The kernel reaches
++  // it pc-relatively, which lands 2 MB below its link offset: map that
++  // megapage (kernel only) onto the window.
++  user_l2pt[(0x2000000 - MEGAPAGE_SIZE) / MEGAPAGE_SIZE] = ((DRAM_BASE + 0x2000000)/RISCV_PGSIZE << PTE_PPN_SHIFT) | PTE_V | PTE_R | PTE_W | PTE_A | PTE_D;
+ #elif SATP_MODE_CHOICE == SATP_MODE_SV32
+   l1pt[PTES_PER_PT-1] = (DRAM_BASE/RISCV_PGSIZE << PTE_PPN_SHIFT) | PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D;
+ #else

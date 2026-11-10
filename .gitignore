@@ -13,3 +13,6 @@
 
 # cargo
 /target/
+
+# riscv-tests built for the board (riscv-tests/Makefile)
+/riscv-tests/build/

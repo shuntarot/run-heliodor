@@ -14,8 +14,9 @@ evaluate_size_limit = 16777216
 # and a git dependency needs a published version. Clone
 # https://github.com/shuntarot/heliodor next to this repository instead.
 heliodor = { path = "../heliodor" }
-hns      = { git = "https://github.com/shuntarot/uharness", project = "hns", version = "0.6.1" }
+hns      = { git = "https://github.com/shuntarot/uharness", project = "hns", version = "0.13.1" }
 
 [lint.portability]
-# The same test benches load those memories in `initial`.
-allow_in_dependencies = ["initial_assign"]
+# The same test benches load those memories in `initial`, and hns::mem
+# writes its true dual-port RAM from two always_ff blocks.
+allow_in_dependencies = ["initial_assign", "multiple_assign"]

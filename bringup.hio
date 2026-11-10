@@ -1,7 +1,7 @@
 # heliodor -- hio run bringup.hio
 #
 # Hold the core in reset, put asm/smoke.elf in mem, release it, and read what
-# it wrote at 0x8000_1000 and 0x8200_0000.
+# it wrote at 0x8200_0000 and 0x8200_0100, in the DRAM it does not cache.
 
 echo == identity ==
 id
@@ -9,27 +9,25 @@ id
 echo == load the program while the core is held ==
 reset --hold
 load mem asm/smoke.elf --verify
-write mem 0x1000 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 write mem 0x2000000 0 0 0 0
+write mem 0x2000100 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 reset --release
 sleep 300
 
 echo == what the core wrote ==
-# 0x21534e48 ("HNS!"), misa 0x8000000000141181 (no V), mhartid 0
-read mem 0x1000 6
+# 0x21534e48 ("HNS!"), misa 0x800000000014112d, mhartid 0
+read mem 0x2000100 6
 # 0x0123456789abcdef (loaded from .rodata), 0xf45f6 (mul/divu),
-# 0x8877665544332211 (byte stores)
-read mem 0x1018 6
-# 0x12345678 twice (a store read back by the very next load)
-read mem 0x1030 4
+# 0x8877665544332211 (byte stores, loaded back)
+read mem 0x2000118 6
+# 0x12345678 (a store read back by the very next load), 0x2a (amoadd.d)
+read mem 0x2000130 4
 # counter: must differ between the two reads
-read mem 0x1040 1
+read mem 0x2000140 1
 sleep 100
-read mem 0x1040 1
-
-echo == past the cached 32 MB ==
-# 0xfeedfacecafebeef, as loaded back by the core and stored in cached memory
-read mem 0x1048 2
+read mem 0x2000140 1
+# 0xfeedfacecafebeef, as loaded back by the core
+read mem 0x2000148 2
 # the same dword where the core stored it, and the byte 0x5a at 0x8200_0009
 read mem 0x2000000 4
 

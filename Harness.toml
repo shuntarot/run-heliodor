@@ -13,6 +13,12 @@ aperture = "1M"
 dut_base = 0x8000_0000
 ports    = ["mem"]
 
+# The Debug Module's DMI. `hio cpu` finds it here. Its reset is the
+# harness's own, so `hio reset` leaves the debugger's state alone.
+[bundle.dmi]
+backing = "dmi"
+reset   = "i_dm_rst"
+
 # For `--transport pcie`: the BAR must hold the whole window.
 [pcie]
 bar_bytes = "2M"
