@@ -11,6 +11,28 @@ hart of the 2-wide core: its caches and L2, CLINT, PLIC and Debug Module.
 The SoC ends in one AXI4 master, which goes to the harness's `dram`, and the
 Debug Module's DMI goes to the host (`hio cpu`).
 
+## Address map
+
+What a program sees.
+
+| Address | Size | Region | Backed by |
+|---|---|---|---|
+| `0x0000_4000` – `0x0000_5FFF` | 8 KB | Debug Module: code at `0x4000`, data at `0x5000` | the Debug Module in the SoC |
+| `0x0200_0000` – `0x0200_FFFF` | 64 KB | CLINT: timer and software interrupts | registers in the SoC |
+| `0x0C00_0000` – `0x0C3F_FFFF` | 4 MB | PLIC | registers in the SoC |
+| `0x1000_0000` – `0x1000_0FFF` | 4 KB | UART | registers in the SoC; its output is not connected (the console is RTT) |
+| `0x8000_0000` – `0x81FF_FFFF` | 32 MB | DRAM, cached: the reset PC, the program, its data | the board's DRAM |
+| `0x8200_0000` – `0x83FF_FFFF` | 32 MB | DRAM, not cached: the RTT console, `tohost` | the board's DRAM |
+
+Every other address is a hole.
+
+The caches and the L2 write back, and nothing writes the L2 back to DRAM, so
+the window does not show what the core stores in the first 32 MB while it
+runs. Anything the host reads then goes past them: `bsp/memory.x` puts the
+`.console` section there, and riscv-tests put `tohost` at `0x8200_1000`.
+`hio cpu mem --sba` reads the cached part through the Debug Module, which
+goes through the L2 and sees what the core sees.
+
 ## Requirements
 
 - Veryl, with `veryl-harness` and `hio` from veryl-harness
@@ -93,24 +115,6 @@ The shell is on the console; `exit` powers off.
 The Debug Module's DMI is the `dmi` bundle, so `hio cpu info`, `halt`,
 `regs`, `step`, `resume`, `break` and the rest of `hio cpu` work on the
 running core.
-
-## Memory
-
-| Address | |
-|---|---|
-| `0x8000_0000` | DRAM (`mem`), the reset PC. The core caches the first 32 MB |
-| `0x8200_0000` | the same DRAM, past the cached part: the RTT console lives here |
-| `0x0200_0000` | CLINT |
-| `0x0c00_0000` | PLIC |
-| `0x1000_0000` | UART (its output is not connected; the console is RTT) |
-| `0x0000_4000` | Debug Module: code, and its data at `0x5000` |
-
-The caches and the L2 write back, and nothing writes the L2 back to DRAM, so
-the window does not show what the core stores in the first 32 MB while it
-runs. Anything the host reads then goes past them: `bsp/memory.x` puts the
-`.console` section there, and riscv-tests put `tohost` at `0x8200_1000`.
-`hio cpu mem --sba` reads the cached part through the Debug Module, which
-goes through the L2 and sees what the core sees.
 
 ## Size
 
