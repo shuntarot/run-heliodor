@@ -1,13 +1,30 @@
-//! Says what the core is, checks that startup set up the sections, then
-//! echoes what you type. Ctrl-A x leaves; typing `q` exits with status 0.
+//! Says what the core is, checks that startup set up the sections, times a
+//! small loop with the cycle and instruction counters, then echoes what you
+//! type. Ctrl-A x leaves; typing `q` exits with status 0.
 
 #![no_std]
 #![no_main]
 
+use core::hint::black_box;
 use core::ptr::addr_of;
 
 use heliodor_bsp::{entry, exit, getc, print, println, riscv};
-use riscv::register::{marchid, mimpid, misa, mvendorid};
+use riscv::register::{marchid, mcycle, mimpid, minstret, misa, mvendorid};
+
+/// Loops of `work` that are timed.
+const LOOPS: u64 = 1000;
+
+/// Two chains that do not depend on each other, so an out-of-order core can
+/// run them side by side.
+fn work(n: u64) -> u64 {
+    let (mut a, mut b) = (0u64, 1u64);
+    for k in 0..n {
+        let k = black_box(k);
+        a = a.wrapping_add(k);
+        b = b.wrapping_mul(3) ^ k;
+    }
+    a ^ b
+}
 
 /// In .rodata: neither copied nor cleared.
 static RODATA: u32 = 0xaaaa_5555;
@@ -43,6 +60,19 @@ fn main() -> ! {
     println!(
         "  sections  .rodata {RODATA:#010x} .data {data:#010x} .bss {bss:#010x} -> {}",
         if ok { "ok" } else { "WRONG" }
+    );
+
+    // The first run fills the caches; the second is timed.
+    black_box(work(LOOPS));
+    let (c0, i0) = (mcycle::read(), minstret::read());
+    black_box(work(LOOPS));
+    let (c1, i1) = (mcycle::read(), minstret::read());
+    let (cycles, insns) = (c1.wrapping_sub(c0), i1.wrapping_sub(i0));
+    let ipc = insns * 100 / cycles.max(1);
+    println!(
+        "  {LOOPS} loops  {cycles} cycles, {insns} instructions, IPC {}.{:02}",
+        ipc / 100,
+        ipc % 100
     );
 
     println!("type something; q exits");
