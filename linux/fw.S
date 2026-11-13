@@ -124,9 +124,13 @@ _start:
     add  t0, t0, t1
     csrw mscratch, t0
 
-    /* S-mode may read time, cycle and instret. */
+    /* S-mode and U-mode may read time, cycle and instret. Linux does not
+     * set scounteren itself (only its SBI PMU driver would), and the vDSO
+     * reads time from U-mode: without this, gettimeofday is an illegal
+     * instruction. */
     li   t0, 7
     csrw mcounteren, t0
+    csrw scounteren, t0
 
     /* Misaligned access, illegal instruction, breakpoint, ecall from U and
      * page faults go to S-mode. */
