@@ -1,19 +1,25 @@
 # run-heliodor
 
 Runs the [heliodor](https://github.com/dalance/heliodor) RISC-V core (RV64GC,
-out of order) in the Veryl simulator or on a Xilinx VCU118 with
+out of order) in the Veryl simulator, on a Xilinx VCU118, or with four harts
+on the fp1 (a VU440 board), with
 [veryl-harness](https://github.com/shuntarot/uharness). The core fetches,
 loads and stores through one memory, which the host fills before the core
 starts.
 
-`rtl/heliodor_top.veryl` runs heliodor's SoC (`heliodor_soc_smp`) with one
-hart of the 2-wide core: its caches and L2, CLINT, PLIC and Debug Module.
-The SoC ends in one AXI4 master, which goes to the harness's `dram`, and the
-Debug Module's DMI goes to the host (`hio cpu`).
+`rtl/heliodor_sys.veryl` is heliodor's SoC (`heliodor_soc_smp`) with harts
+of the 2-wide core: their caches and the shared L2, CLINT, PLIC and Debug
+Module. The SoC ends in one AXI4 master, which goes to the harness's `dram`,
+and the Debug Module's DMI goes to the host (`hio cpu`). Two tops use it:
+
+| Top | Harts | Manifest | Board |
+|---|---|---|---|
+| `heliodor_top` | 1 | `Harness.toml` | the simulator, the VCU118 |
+| `heliodor_smp4_top` | 4 | `Harness.smp4.toml` | the fp1 |
 
 ## Address map
 
-What a program sees.
+What a program sees, with one hart or four.
 
 | Address | Size | Region | Backed by |
 |---|---|---|---|
@@ -75,6 +81,21 @@ boot; `hio serve` can reprogram it without a reboot (see `hio`'s guide).
 The core runs at 20 MHz, the same core as in the simulator. A build takes
 about 3 hours.
 
+### fp1
+
+Four harts take most of a VU440, so they have their own top and manifest.
+They run at 10 MHz; a build takes about 11 hours. The fp1's target
+description is not public.
+
+```bash
+veryl harness gen --target pezy/fp1 --transport pcie --config Harness.smp4.toml -o hns/smp4
+make -C hns/smp4/syn
+hio --regs hns/smp4/regs.json program
+hio --regs hns/smp4/regs.json run bringup.hio
+```
+
+`hio cpu info` counts the four harts; the rest of `hio cpu` works on hart 0.
+
 Firmware in Rust runs with cargo. `hio cpu boot` loads it, connects to its RTT
 console, and exits with its status; Ctrl-A x leaves. If `veryl harness gen`
 wrote somewhere other than `hns/` (`--out-dir`), change the path of
@@ -101,14 +122,19 @@ scripts/riscv-tests.sh -o results.txt riscv-tests/build/isa 'rv64ui-p-*'   # or 
 
 `linux/` builds Linux 6.6 with a busybox shell, and boots it with its
 console on RTT. It downloads the sources into `linux/build/` (checked by
-sha256); `linux/fw.S` is a small SBI firmware that puts the console on RTT.
+sha256); `linux/fw.S` is a small SBI firmware that puts the console on RTT
+and starts the other harts. One kernel serves both builds; the device tree
+says how many harts there are.
 
 ```bash
 make -C linux
-hio --regs hns/vcu118/regs.json cpu boot linux/linux.elf
+hio --regs hns/vcu118/regs.json cpu boot linux/linux.elf        # one hart
+hio --regs hns/smp4/regs.json cpu boot linux/linux-smp4.elf     # four harts, on the fp1
+make -C linux run-emu                                           # linux-smp4.elf's on QEMU
 ```
 
-The shell is on the console; `exit` powers off.
+The shell is on the console; `exit` powers off. On the fp1 the four-hart
+kernel boots to the shell in about 90 s over PCIe.
 
 ## Debug
 
@@ -124,20 +150,24 @@ controller.
 
 | Target | Clock | Core LUT / FF / BRAM / DSP | Design LUT / FF / BRAM / DSP |
 |---|---|---|---|
-| `xilinx/vcu118`, PCIe | 20 MHz | 370,461 / 144,495 / 32 / 40 | 406,235 / 182,985 / 79.5 / 43 |
+| `xilinx/vcu118`, PCIe | 20 MHz | 370,431 / 144,495 / 32 / 40 | 406,101 / 182,987 / 79.5 / 43 |
+| `pezy/fp1`, PCIe, four harts | 10 MHz | 1,368,208 / 555,974 / 32 / 160 | 1,407,967 / 590,487 / 66.5 / 163 |
 
 ## Files
 
 | | |
 |---|---|
-| `rtl/heliodor_top.veryl` | the DUT: heliodor's SoC with one hart, its memory map, AXI4 master and DMI |
+| `rtl/heliodor_sys.veryl` | heliodor's SoC with N harts, its memory map, AXI4 master and DMI |
+| `rtl/heliodor_top.veryl` | the DUT with one hart |
+| `rtl/heliodor_smp4_top.veryl` | the DUT with four harts (the fp1) |
 | `Harness.toml` | where each port goes |
+| `Harness.smp4.toml` | the same for four harts, at 10 MHz |
 | `vivado.tcl` | synthesis directives (`[vivado] tcl`) |
 | `asm/smoke.S` | the test program (`make -C asm`) |
 | `riscv-tests/` | riscv-tests' isa tests, linked for this board (`make -C riscv-tests`) |
 | `bsp/` | startup, console (RTT, or the UART on QEMU) and exit for the firmware |
 | `apps/` | the firmware: `hello`, `console` |
-| `linux/` | Linux and busybox, built and packed with the SBI firmware (`make -C linux`) |
+| `linux/` | Linux and busybox, built and packed with the SBI firmware: `linux.elf` for one hart, `linux-smp4.elf` for four (`make -C linux`) |
 
 Put paths for your machine in `local.mk` (`CROSS`, `LINUX_CROSS`, `RISCV_TESTS`).
 
