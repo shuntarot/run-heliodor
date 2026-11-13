@@ -4,7 +4,7 @@
  * kernel asks (SBI HSM).
  *
  * Memory starts at the kernel (0x8020_0000); below it is the firmware. It
- * ends at 0x8200_0000, where the cached part of DRAM ends. */
+ * ends at 0xFFFF_FFFF, less the 32 MB the core does not cache. */
 /dts-v1/;
 
 / {
@@ -98,9 +98,22 @@
 		};
 	};
 
+	/* All of DRAM from the kernel up: 2 GB less the firmware below it. */
 	memory@80200000 {
 		device_type = "memory";
-		reg = <0x0 0x80200000 0x0 0x1e00000>;
+		reg = <0x0 0x80200000 0x0 0x7fe00000>;
+	};
+
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		/* DRAM the core does not cache: the RTT console and tohost. */
+		uncached@82000000 {
+			reg = <0x0 0x82000000 0x0 0x2000000>;
+			no-map;
+		};
 	};
 
 	soc {

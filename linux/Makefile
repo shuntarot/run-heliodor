@@ -55,7 +55,7 @@ linux-qemu.elf: fw.S image.S link.ld $(B)/Image $(B)/heliodor-smp4.dtb
 	$(call ELF,4,heliodor-smp4,-DQEMU)
 
 run-emu: linux-qemu.elf
-	$(QEMU) -machine virt -smp 4 -m 128M -nographic -bios none -kernel $<
+	$(QEMU) -machine virt -smp 4 -m 2G -nographic -bios none -kernel $<
 
 $(B)/%.dtb: %.dts
 	mkdir -p $(B)

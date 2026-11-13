@@ -6,9 +6,12 @@ freq_mhz = 20
 
 # All of memory, from 0x8000_0000, the core's reset vector. The core fetches,
 # loads and stores through it. `hio cpu boot` places each segment by
-# `dut_base`.
+# `dut_base`. 2 GB: all the 32-bit AXI4 address reaches from there, and all
+# the VCU118 gives one controller. The simulator's memory is sparse, so the
+# size costs nothing there.
 [bundle.mem]
 backing  = "dram"
+depth    = "256M"   # words of 8 bytes
 aperture = "1M"
 dut_base = 0x8000_0000
 ports    = ["mem"]

@@ -1,7 +1,8 @@
 /* heliodor on run-heliodor's harness. `mem` is DRAM from 0x8000_0000, the
- * reset PC. The core caches only its first 32 MB, which hold the program.
- * The RTT console goes past them, to 0x8200_0000, so the host sees what the
- * core writes there at once, and the core sees what the host writes. */
+ * reset PC. The program goes in the first 32 MB, which the core caches.
+ * The RTT console goes past them, to 0x8200_0000, which it does not, so the
+ * host sees what the core writes there at once, and the core sees what the
+ * host writes. */
 
 MEMORY
 {

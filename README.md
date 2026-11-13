@@ -29,12 +29,13 @@ What a program sees, with one hart or four.
 | `0x1000_0000` – `0x1000_0FFF` | 4 KB | UART | registers in the SoC; its output is not connected (the console is RTT) |
 | `0x8000_0000` – `0x81FF_FFFF` | 32 MB | DRAM, cached: the reset PC, the program, its data | the board's DRAM |
 | `0x8200_0000` – `0x83FF_FFFF` | 32 MB | DRAM, not cached: the RTT console, `tohost` | the board's DRAM |
+| `0x8400_0000` – `0xFFFF_FFFF` | 1984 MB | DRAM, cached: Linux's memory past the first 32 MB | the board's DRAM |
 
 Every other address is a hole.
 
 The caches and the L2 write back, and nothing writes the L2 back to DRAM, so
-the window does not show what the core stores in the first 32 MB while it
-runs. Anything the host reads then goes past them: `bsp/memory.x` puts the
+the window does not show what the core stores in cached DRAM while it
+runs. Anything the host reads then goes to the 32 MB that are not cached: `bsp/memory.x` puts the
 `.console` section there, and riscv-tests put `tohost` at `0x8200_1000`.
 `hio cpu mem --sba` reads the cached part through the Debug Module, which
 goes through the L2 and sees what the core sees.

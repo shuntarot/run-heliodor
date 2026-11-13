@@ -4,11 +4,12 @@
 /// N_HARTS.
 ///
 /// The memory map is the Linux boot map of heliodor's test benches: DRAM from
-/// 0x8000_0000 (`dut_base`), CLINT, PLIC and UART as IO. The core caches the
-/// first 32 MB of DRAM. The next 32 MB is DRAM that is not cached, one dword
-/// per access, so the host sees what the core writes there at once: the place
-/// for anything the host reads while the program runs, such as the RTT
-/// console. Every other address is a hole.
+/// 0x8000_0000 (`dut_base`), CLINT, PLIC and UART as IO. DRAM is the 2 GB
+/// up to 0xFFFF_FFFF, which the harness's 32-bit AXI4 address reaches, and
+/// the core caches all of it but 0x8200_0000 to 0x83FF_FFFF. Those 32 MB are
+/// not cached, one dword per access, so the host sees what the core writes
+/// there at once: the place for anything the host reads while the program
+/// runs, such as the RTT console. Every other address is a hole.
 ///
 /// The Debug Module is reached on its DMI, an APB slave the host drives
 /// (`hio cpu`). Its code and data sit at 0x4000 and 0x5000. Its System Bus
@@ -130,7 +131,7 @@ module heliodor_sys #(
         cbo_ok       : 0
     };
 
-    const MAP_N: u32               = 7;
+    const MAP_N: u32               = 12;
     const MAP  : PmaRegion [MAP_N] = '{
         PmaRegion'{base: 56'h00_0000_0000_4000, mask: 56'hff_ffff_ffff_f000, attr: DM_CODE_ATTR},
         PmaRegion'{base: 56'h00_0000_0000_5000, mask: 56'hff_ffff_ffff_f000, attr: DM_DATA_ATTR},
@@ -138,7 +139,14 @@ module heliodor_sys #(
         PmaRegion'{base: 56'h00_0000_0c00_0000, mask: 56'hff_ffff_ffc0_0000, attr: IO_ATTR},
         PmaRegion'{base: 56'h00_0000_1000_0000, mask: 56'hff_ffff_ffff_f000, attr: IO_ATTR},
         PmaRegion'{base: 56'h00_0000_8000_0000, mask: 56'hff_ffff_fe00_0000, attr: DRAM_ATTR},
-        PmaRegion'{base: 56'h00_0000_8200_0000, mask: 56'hff_ffff_fe00_0000, attr: NC_ATTR}
+        PmaRegion'{base: 56'h00_0000_8200_0000, mask: 56'hff_ffff_fe00_0000, attr: NC_ATTR},
+        // The rest of the 2 GB, in aligned powers of two: regions must not
+        // overlap.
+        PmaRegion'{base: 56'h00_0000_8400_0000, mask: 56'hff_ffff_fc00_0000, attr: DRAM_ATTR},
+        PmaRegion'{base: 56'h00_0000_8800_0000, mask: 56'hff_ffff_f800_0000, attr: DRAM_ATTR},
+        PmaRegion'{base: 56'h00_0000_9000_0000, mask: 56'hff_ffff_f000_0000, attr: DRAM_ATTR},
+        PmaRegion'{base: 56'h00_0000_a000_0000, mask: 56'hff_ffff_e000_0000, attr: DRAM_ATTR},
+        PmaRegion'{base: 56'h00_0000_c000_0000, mask: 56'hff_ffff_c000_0000, attr: DRAM_ATTR}
     };
 
     // DRAM is in the low 4 GB: the harness's AXI4 address is 32 bits.
