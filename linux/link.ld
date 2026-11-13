@@ -8,6 +8,7 @@ SECTIONS
   . = 0x80000000;
   .text   : { *(.text.start) *(.text .text.*) }
   .rodata : { *(.rodata .rodata.*) }
+  .data   : { *(.data .data.*) }
   .bss    : { *(.bss .bss.*) }
 
   . = 0x80200000;

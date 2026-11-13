@@ -2,4 +2,4 @@
     .section .kernel, "a"
     .incbin "build/Image"
     .section .dtb, "a"
-    .incbin "build/heliodor.dtb"
+    .incbin DTB_FILE

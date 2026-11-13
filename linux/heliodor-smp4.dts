@@ -1,0 +1,121 @@
+/* heliodor's core in the harness with four harts (the fp1), the CLINT, and
+ * memory. No UART and no PLIC: the console is the SBI one, which the
+ * firmware puts on RTT. The firmware starts the harts past hart 0 when the
+ * kernel asks (SBI HSM).
+ *
+ * Memory starts at the kernel (0x8020_0000); below it is the firmware. It
+ * ends at 0x8200_0000, where the cached part of DRAM ends. */
+/dts-v1/;
+
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	compatible = "heliodor,rv64";
+	model = "heliodor on veryl-harness, four harts";
+
+	chosen {
+		/* no4lvl: the core has Sv39 only, but its satp takes any mode, so
+		 * Linux would find Sv57 and Sv48 there. */
+		bootargs = "console=hvc0 earlycon=sbi no4lvl";
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		/* mtime counts at a tenth of the 10 MHz core clock. */
+		timebase-frequency = <1000000>;
+
+		cpu@0 {
+			device_type = "cpu";
+			compatible = "riscv";
+			reg = <0>;
+			riscv,isa = "rv64imafdc";
+			riscv,isa-base = "rv64i";
+			riscv,isa-extensions = "i", "m", "a", "f", "d", "c",
+				"zicsr", "zifencei", "zicntr";
+			mmu-type = "riscv,sv39";
+			status = "okay";
+
+			cpu0_intc: interrupt-controller {
+				#interrupt-cells = <1>;
+				compatible = "riscv,cpu-intc";
+				interrupt-controller;
+			};
+		};
+
+		cpu@1 {
+			device_type = "cpu";
+			compatible = "riscv";
+			reg = <1>;
+			riscv,isa = "rv64imafdc";
+			riscv,isa-base = "rv64i";
+			riscv,isa-extensions = "i", "m", "a", "f", "d", "c",
+				"zicsr", "zifencei", "zicntr";
+			mmu-type = "riscv,sv39";
+			status = "okay";
+
+			cpu1_intc: interrupt-controller {
+				#interrupt-cells = <1>;
+				compatible = "riscv,cpu-intc";
+				interrupt-controller;
+			};
+		};
+
+		cpu@2 {
+			device_type = "cpu";
+			compatible = "riscv";
+			reg = <2>;
+			riscv,isa = "rv64imafdc";
+			riscv,isa-base = "rv64i";
+			riscv,isa-extensions = "i", "m", "a", "f", "d", "c",
+				"zicsr", "zifencei", "zicntr";
+			mmu-type = "riscv,sv39";
+			status = "okay";
+
+			cpu2_intc: interrupt-controller {
+				#interrupt-cells = <1>;
+				compatible = "riscv,cpu-intc";
+				interrupt-controller;
+			};
+		};
+
+		cpu@3 {
+			device_type = "cpu";
+			compatible = "riscv";
+			reg = <3>;
+			riscv,isa = "rv64imafdc";
+			riscv,isa-base = "rv64i";
+			riscv,isa-extensions = "i", "m", "a", "f", "d", "c",
+				"zicsr", "zifencei", "zicntr";
+			mmu-type = "riscv,sv39";
+			status = "okay";
+
+			cpu3_intc: interrupt-controller {
+				#interrupt-cells = <1>;
+				compatible = "riscv,cpu-intc";
+				interrupt-controller;
+			};
+		};
+	};
+
+	memory@80200000 {
+		device_type = "memory";
+		reg = <0x0 0x80200000 0x0 0x1e00000>;
+	};
+
+	soc {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		compatible = "simple-bus";
+		ranges;
+
+		clint@2000000 {
+			compatible = "riscv,clint0";
+			reg = <0x0 0x2000000 0x0 0x10000>;
+			interrupts-extended = <&cpu0_intc 3>, <&cpu0_intc 7>,
+				<&cpu1_intc 3>, <&cpu1_intc 7>,
+				<&cpu2_intc 3>, <&cpu2_intc 7>,
+				<&cpu3_intc 3>, <&cpu3_intc 7>;
+		};
+	};
+};

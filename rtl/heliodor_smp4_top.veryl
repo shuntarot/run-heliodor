@@ -1,0 +1,79 @@
+/// heliodor's SoC (`heliodor_sys`) with four harts of the 2-wide core, for a
+/// board with room for them. The harts share the L2, the CLINT and the Debug
+/// Module; all four start at the reset vector. The AXI4 ID is 4 bits: the
+/// SoC's memory slot, two per hart and one for SBA.
+module heliodor_smp4_top (
+    i_clk   : input clock,
+    i_rst   : input reset,
+    i_dm_rst: input reset,
+
+    i_dmi_psel   : input  logic    ,
+    i_dmi_penable: input  logic    ,
+    i_dmi_pwrite : input  logic    ,
+    i_dmi_paddr  : input  logic<9> ,
+    i_dmi_pwdata : input  logic<32>,
+    o_dmi_prdata : output logic<32>,
+    o_dmi_pready : output logic    ,
+
+    mem: modport $std::axi4_if::<$std::axi4_pkg::<32, 8, 4, 1, 1, 1, 1, 1>>::master,
+) {
+    inst u_sys: heliodor_sys #(
+        N_HARTS: 4,
+    ) (
+        i_clk                     ,
+        i_rst                     ,
+        i_dm_rst                  ,
+        i_dmi_psel                ,
+        i_dmi_penable             ,
+        i_dmi_pwrite              ,
+        i_dmi_paddr               ,
+        i_dmi_pwdata              ,
+        o_dmi_prdata              ,
+        o_dmi_pready              ,
+        o_axi_arvalid: mem.arvalid,
+        i_axi_arready: mem.arready,
+        o_axi_arid   : mem.arid   ,
+        o_axi_araddr : mem.araddr ,
+        o_axi_arlen  : mem.arlen  ,
+        o_axi_arsize : mem.arsize ,
+        o_axi_arburst: mem.arburst,
+        i_axi_rvalid : mem.rvalid ,
+        o_axi_rready : mem.rready ,
+        i_axi_rid    : mem.rid    ,
+        i_axi_rdata  : mem.rdata  ,
+        i_axi_rresp  : mem.rresp  ,
+        i_axi_rlast  : mem.rlast  ,
+        o_axi_awvalid: mem.awvalid,
+        i_axi_awready: mem.awready,
+        o_axi_awid   : mem.awid   ,
+        o_axi_awaddr : mem.awaddr ,
+        o_axi_awlen  : mem.awlen  ,
+        o_axi_awsize : mem.awsize ,
+        o_axi_awburst: mem.awburst,
+        o_axi_wvalid : mem.wvalid ,
+        i_axi_wready : mem.wready ,
+        o_axi_wdata  : mem.wdata  ,
+        o_axi_wstrb  : mem.wstrb  ,
+        o_axi_wlast  : mem.wlast  ,
+        i_axi_bvalid : mem.bvalid ,
+        o_axi_bready : mem.bready ,
+        i_axi_bid    : mem.bid    ,
+        i_axi_bresp  : mem.bresp  ,
+    );
+
+    always_comb {
+        mem.arcache  = 0;
+        mem.arprot   = 0;
+        mem.arlock   = 0;
+        mem.arqos    = 0;
+        mem.arregion = 0;
+        mem.aruser   = 0;
+        mem.awcache  = 0;
+        mem.awprot   = 0;
+        mem.awlock   = 0;
+        mem.awqos    = 0;
+        mem.awregion = 0;
+        mem.awuser   = 0;
+        mem.wuser    = 0;
+    }
+}

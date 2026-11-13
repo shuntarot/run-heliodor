@@ -1,3 +1,5 @@
 # Downloads and build output (make)
 /build/
 /linux.elf
+/linux-smp4.elf
+/linux-qemu.elf

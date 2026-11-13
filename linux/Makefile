@@ -1,5 +1,7 @@
-# make -C linux    builds linux.elf: Linux with busybox on heliodor, console
-#                  on RTT
+# make -C linux    builds linux.elf (one hart, the VCU118) and linux-smp4.elf
+#                  (four harts, the fp1): Linux with busybox on heliodor,
+#                  console on RTT
+# make -C linux run-emu    linux-smp4.elf's on QEMU, with four harts
 #
 # It downloads Linux and busybox into build/ (checked by sha256), builds
 # both, and puts them in one ELF with the firmware and the device tree. Run
@@ -28,15 +30,34 @@ KMAKE   = $(MAKE) -C $(LINUX) O=$(B)/kbuild ARCH=riscv CROSS_COMPILE=$(LINUX_CRO
 LINUX   := $(B)/linux-$(LINUX_VER)
 BUSYBOX := $(B)/busybox-$(BUSYBOX_VER)
 
-.PHONY: all clean
-all: linux.elf
+QEMU ?= qemu-system-riscv64
 
+.PHONY: all clean run-emu
+all: linux.elf linux-smp4.elf
+
+# The firmware, the kernel and a device tree in one ELF. NHARTS is how many
+# harts the firmware serves; the device tree names the same.
+ELF = $(LINUX_CROSS)gcc -march=rv64imac_zicsr_zifencei -mabi=lp64 -nostdlib -static \
+	-DDTB_ADDR=$(DTB_ADDR) -Wl,--defsym=DTB_ADDR=$(DTB_ADDR) \
+	-DDTB_FILE='"$(B)/$(2).dtb"' -DNHARTS=$(1) $(3) -T link.ld -o $@ fw.S image.S
+
+# The VCU118: one hart at 20 MHz.
 linux.elf: fw.S image.S link.ld $(B)/Image $(B)/heliodor.dtb
-	$(LINUX_CROSS)gcc -march=rv64imac_zicsr_zifencei -mabi=lp64 -nostdlib -static \
-		-DDTB_ADDR=$(DTB_ADDR) -Wl,--defsym=DTB_ADDR=$(DTB_ADDR) \
-		-T link.ld -o $@ fw.S image.S
+	$(call ELF,1,heliodor)
 
-$(B)/heliodor.dtb: heliodor.dts
+# Four harts at 10 MHz: the fp1.
+linux-smp4.elf: fw.S image.S link.ld $(B)/Image $(B)/heliodor-smp4.dtb
+	$(call ELF,4,heliodor-smp4)
+
+# linux-smp4.elf's, on QEMU's `virt` machine with four harts: the console is its
+# UART, and the exit status ends QEMU. Ctrl-A x leaves.
+linux-qemu.elf: fw.S image.S link.ld $(B)/Image $(B)/heliodor-smp4.dtb
+	$(call ELF,4,heliodor-smp4,-DQEMU)
+
+run-emu: linux-qemu.elf
+	$(QEMU) -machine virt -smp 4 -m 128M -nographic -bios none -kernel $<
+
+$(B)/%.dtb: %.dts
 	mkdir -p $(B)
 	dtc -I dts -O dtb -o $@ $<
 
@@ -90,4 +111,4 @@ $(B)/Image: $(LINUX)/Makefile kernel.config $(B)/initramfs.list
 	cp $(B)/kbuild/arch/riscv/boot/Image $@
 
 clean:
-	rm -rf linux.elf $(B)/kbuild $(B)/busybox $(B)/Image $(B)/heliodor.dtb $(B)/initramfs.list
+	rm -rf linux.elf linux-smp4.elf linux-qemu.elf $(B)/kbuild $(B)/busybox $(B)/Image $(B)/*.dtb $(B)/initramfs.list

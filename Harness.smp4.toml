@@ -1,0 +1,26 @@
+# heliodor with four harts on the fp1:
+#   veryl harness gen --target pezy/fp1 --transport pcie --config Harness.smp4.toml -o hns/smp4
+[dut]
+module = "heliodor_smp4_top"
+
+# Timing closes near 20 MHz with four harts; start lower.
+[clock.i_clk]
+freq_mhz = 10
+
+# The board has 16 GB; the core addresses 2 GB of it from 0x8000_0000.
+[bundle.mem]
+backing  = "dram"
+depth    = "256M"   # words of 8 bytes
+aperture = "1M"
+dut_base = 0x8000_0000
+ports    = ["mem"]
+
+[bundle.dmi]
+backing = "dmi"
+reset   = "i_dm_rst"
+
+[pcie]
+bar_bytes = "2M"
+
+[vivado]
+tcl = "vivado.tcl"
