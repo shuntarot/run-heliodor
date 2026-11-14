@@ -70,7 +70,7 @@ root (`sudo "$(command -v hio)" -p ...`).
 Firmware runs with `cargo run -p <app>`, and Linux with
 `hio cpu boot linux/linux.elf`:
 
-- [doc/apps.md](doc/apps.md): the firmware (`hello`, `console`, `memlat`)
+- [doc/apps.md](doc/apps.md): the firmware (`hello`, `console`, `memlat`, `membw`)
   and riscv-tests
 - [doc/linux.md](doc/linux.md): Linux
 

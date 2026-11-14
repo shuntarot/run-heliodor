@@ -39,6 +39,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "membw"
+version = "0.1.0"
+dependencies = [
+ "heliodor-bsp",
+]
+
+[[package]]
 name = "memlat"
 version = "0.1.0"
 dependencies = [
