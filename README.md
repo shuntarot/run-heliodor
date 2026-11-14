@@ -106,7 +106,22 @@ wrote somewhere other than `hns/` (`--out-dir`), change the path of
 cargo run -p hello
 cargo run -p console
 cargo run-emu -p console   # the same on QEMU's virt machine
+cargo run --release -p memlat
 ```
+
+`memlat` measures load latency by pointer chasing, in core cycles. On the
+VCU118 at 20 MHz:
+
+| Where the line is | Cycles per load |
+|---|---|
+| L1 D-cache (up to 16 KB) | 5 |
+| L2 (up to 128 KB) | 21 |
+| DRAM | 37.7 |
+| DRAM the core does not cache | 36.1 |
+
+Lines one way apart show 4 ways in both caches. Lines in address order are
+no faster than in random order, and two chases side by side bring a DRAM
+load down only to 32.6 cycles.
 
 riscv-tests' `isa` tests run one by one through `hio cpu boot`, each ending
 with its pass or failure code (a test that hangs times out after 60 s). They
@@ -167,7 +182,7 @@ controller.
 | `asm/smoke.S` | the test program (`make -C asm`) |
 | `riscv-tests/` | riscv-tests' isa tests, linked for this board (`make -C riscv-tests`) |
 | `bsp/` | startup, console (RTT, or the UART on QEMU) and exit for the firmware |
-| `apps/` | the firmware: `hello`, `console` |
+| `apps/` | the firmware: `hello`, `console`, `memlat` |
 | `linux/` | Linux and busybox, built and packed with the SBI firmware: `linux.elf` for one hart, `linux-smp4.elf` for four (`make -C linux`) |
 
 Put paths for your machine in `local.mk` (`CROSS`, `LINUX_CROSS`, `RISCV_TESTS`).
