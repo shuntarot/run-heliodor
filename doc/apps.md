@@ -83,17 +83,18 @@ cores. On the VCU118 at 20 MHz:
 | CLINT load, or, store | 28 |
 | Uncached DRAM load, dependent / independent | 36.1 / 32.2 |
 | Uncached DRAM store | 17 |
-| CSR read / write | 4.1 / 13.9 |
-| `fence` / `fence.i` | 1.1 / 62.9 |
-| `ecall` to a handler and back | 42.9 |
-| `msip` store to the interrupt handler | 32.0 |
-| `msip` store, the handler, and back | 60.0 |
+| CSR read / write | 4.1 / 13.8 |
+| `fence` / `fence.i` | 1.1 / 63–68 |
+| `ecall` to a handler and back | 42.6 |
+| `msip` store to the interrupt handler | 28–32 |
+| `msip` store, the handler, and back | 57–60 |
 
-The last two include two `mcycle` reads, 9 cycles together.
+The last two include two `mcycle` reads, 9 cycles together. Where a
+range is given, it moved by that much when the code moved.
 
 - Register loads and stores run one at a time, after every older
   instruction, and a store waits for its response.
-- A CSR write holds up the instructions after it: 32 adds take 18 cycles
+- A CSR write holds up the instructions after it: 32 adds take 17 cycles
   alone, 21 with a CSR read among them, and 34 with a CSR write.
 - Of what can sit between two DRAM misses, only an uncached load and a
   `fence` keep the second from starting before the first ends; a CLINT

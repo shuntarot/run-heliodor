@@ -16,10 +16,9 @@
 use core::arch::{asm, global_asm};
 use core::ptr::{read_volatile, write_volatile};
 
-use heliodor_bsp::{entry, exit, println, riscv};
-use riscv::register::mcycle;
-
 // --- The board ---------------------------------------------------------------
+
+use heliodor_bsp::{entry, exit, println, riscv};
 
 /// The CLINT: registers inside the SoC, next to the core.
 const CLINT: usize = 0x0200_0000;
@@ -35,6 +34,10 @@ const UNCACHED: usize = 0x8380_0000;
 /// Cached DRAM the program does not use, 16 MB of it, for cache misses.
 const BUF: usize = 0x8400_0000;
 const BUF_SIZE: usize = 16 * 1024 * 1024;
+
+// ------------------------------------------------------------------------------
+
+use riscv::register::mcycle;
 
 // --- Word-sized loads and stores, for RV32 and RV64 ---------------------------
 
@@ -93,8 +96,8 @@ macro_rules! time_block {
 // A vectored trap table for the trap tests, with handlers that touch no
 // memory and only the registers the tests give them:
 // - ecall: steps over the ecall. Uses t6.
-// - machine software interrupt: puts mcycle in t6 and clears msip, whose
-//   address is in t4.
+// - machine software interrupt: puts mcycle in t6, counts itself in t5, and
+//   clears msip, whose address is in t4.
 // Any other trap goes to the handler the program had before.
 global_asm!(
     ".section .text.issue_traps, \"ax\"",
@@ -123,6 +126,7 @@ global_asm!(
     "    mret",
     "issue_msi:",
     "    csrr t6, mcycle",
+    "    addi t5, t5, 1",
     "    sw zero, 0(t4)",
     "    mret",
     "issue_other:",
@@ -364,27 +368,29 @@ fn main() -> ! {
     println!();
     println!("5. traps");
     let mut ecall = 0;
-    let (mut entry, mut total) = (0u64, 0u64);
+    let (mut entry, mut total, mut again) = (0u64, 0u64, 0usize);
     with_traps(|| {
         ecall = time_block! { asm!(x8!("ecall"), out("t6") _, options(nostack)); };
         unsafe {
             asm!("csrsi mie, 8", "csrsi mstatus, 8", options(nostack, nomem));
         }
         for _ in 0..ROUNDS {
-            let (t0, t1, t2): (usize, usize, usize);
+            let (t0, t1, t2, n): (usize, usize, usize, usize);
             unsafe {
                 asm!(
                     "li t6, 0",
+                    "li t5, 0",
                     "csrr {t0}, mcycle",
                     "sw {one}, 0(t4)",
                     "1: beqz t6, 1b",
                     "csrr {t2}, mcycle",
                     t0 = out(reg) t0, t2 = out(reg) t2, one = in(reg) 1,
-                    in("t4") MSIP, out("t6") t1, options(nostack),
+                    in("t4") MSIP, out("t5") n, out("t6") t1, options(nostack),
                 );
             }
             entry += t1.wrapping_sub(t0) as u64;
             total += t2.wrapping_sub(t0) as u64;
+            again += n - 1;
         }
         clear_mstatus_mie();
         unsafe {
@@ -394,6 +400,10 @@ fn main() -> ! {
     show("ecall to a handler that steps over it, and back", ecall, 8);
     show("msip store, to the handler's first instruction", entry, 1);
     show("msip store, through the handler, and back", total, 1);
+    if again > 0 {
+        // msip was still set at mret, so the handler ran again.
+        println!("  the handler ran {again} more times than interrupts were raised");
+    }
     let back_to_back = time_block! {
         asm!("csrr {a}, mcycle", "csrr {b}, mcycle", a = out(reg) _, b = out(reg) _, options(nostack, nomem));
     };
