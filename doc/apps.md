@@ -13,6 +13,7 @@ cargo run -p console
 cargo run-emu -p console   # the same on QEMU's virt machine
 cargo run --release -p memlat
 cargo run --release -p membw
+cargo run --release -p issue
 ```
 
 | App | What it does |
@@ -21,6 +22,7 @@ cargo run --release -p membw
 | `console` | prints the core's ID and counters, then echoes what you type |
 | `memlat` | measures load latency |
 | `membw` | measures bandwidth |
+| `issue` | measures what controlling the system through registers costs |
 
 ## memlat
 
@@ -65,6 +67,37 @@ working set. On the VCU118 at 20 MHz (1 B/cycle is 20 MB/s):
   which go to DRAM without being read first.
 - With the arrays back to back, the same element of each falls in the same
   cache set, and Triad drops by a third.
+
+## issue
+
+What it costs the core in M-mode to control a system through registers, in
+core cycles, and whether those accesses let cache misses around them
+overlap. The source builds for RV32 too, to run the same tests on other
+cores. On the VCU118 at 20 MHz:
+
+| Access | Cycles |
+|---|---|
+| CLINT load (`mtime`) | 14 |
+| CLINT poll: load, branch | 15.3 |
+| CLINT store (`mtimecmp`) | 11 |
+| CLINT load, or, store | 28 |
+| Uncached DRAM load, dependent / independent | 36.1 / 32.2 |
+| Uncached DRAM store | 17 |
+| CSR read / write | 4.1 / 13.9 |
+| `fence` / `fence.i` | 1.1 / 62.9 |
+| `ecall` to a handler and back | 42.9 |
+| `msip` store to the interrupt handler | 32.0 |
+| `msip` store, the handler, and back | 60.0 |
+
+The last two include two `mcycle` reads, 9 cycles together.
+
+- Register loads and stores run one at a time, after every older
+  instruction, and a store waits for its response.
+- A CSR write holds up the instructions after it: 32 adds take 18 cycles
+  alone, 21 with a CSR read among them, and 34 with a CSR write.
+- Of what can sit between two DRAM misses, only an uncached load and a
+  `fence` keep the second from starting before the first ends; a CLINT
+  access or a CSR access does not.
 
 ## riscv-tests
 
