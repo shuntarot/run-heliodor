@@ -20,6 +20,13 @@
  * as Rocket): reading it traps to M-mode, and the firmware answers with the
  * CLINT's mtime. Any other illegal instruction goes on to S-mode as if it
  * had been delegated. The core must put the instruction in mtval.
+ *
+ * Built with -DEMULATE_MISALIGNED, it does in M-mode the loads and stores
+ * the core traps on for a misaligned address (Rocket does): Linux expects
+ * the firmware to, and does not do them itself in S-mode.
+ *
+ * Built with -DPMP, it lets S-mode and U-mode reach all memory through PMP
+ * entry 0, for a core that has PMP.
  */
 
 #ifndef DTB_ADDR
@@ -84,6 +91,18 @@
 #define UART_BASE    0x10000000
 #define QEMU_TEST    0x00100000
 
+/* The exceptions medeleg leaves here, for the firmware to emulate. */
+#ifdef EMULATE_TIME
+#define MEDELEG_ILLEGAL     0
+#else
+#define MEDELEG_ILLEGAL     (1 << 2)
+#endif
+#ifdef EMULATE_MISALIGNED
+#define MEDELEG_MISALIGNED  0
+#else
+#define MEDELEG_MISALIGNED  ((1 << 4) | (1 << 6))
+#endif
+
 /* reg = this hart's entry in hart_data. */
 .macro hart_ptr reg, tmp
     csrr \reg, mhartid
@@ -140,12 +159,9 @@ _start:
 
     /* Misaligned access, illegal instruction, breakpoint, ecall from U and
      * page faults go to S-mode. With EMULATE_TIME, illegal instructions come
-     * here first (illegal_insn). */
-#ifdef EMULATE_TIME
-    li   t0, (1 << 3) | (1 << 4) | (1 << 6) | (1 << 8) | (1 << 12) | (1 << 13) | (1 << 15)
-#else
-    li   t0, (1 << 2) | (1 << 3) | (1 << 4) | (1 << 6) | (1 << 8) | (1 << 12) | (1 << 13) | (1 << 15)
-#endif
+     * here first (illegal_insn); with EMULATE_MISALIGNED, misaligned loads
+     * and stores (misaligned). */
+    li   t0, MEDELEG_ILLEGAL | MEDELEG_MISALIGNED | (1 << 3) | (1 << 8) | (1 << 12) | (1 << 13) | (1 << 15)
     csrw medeleg, t0
     /* Supervisor software, timer and external interrupts go to S-mode. */
     li   t0, 0x222
@@ -161,9 +177,9 @@ _start:
     la   t0, s_trap
     csrw stvec, t0
 
-#ifdef QEMU
-    /* QEMU has PMP, and denies S-mode everything until an entry allows
-     * it. heliodor has none. */
+#if defined(QEMU) || defined(PMP)
+    /* A core with PMP (QEMU, Rocket; -DPMP) denies S-mode everything
+     * until an entry allows it. heliodor has none. */
     li   t0, -1
     csrw pmpaddr0, t0
     li   t0, 0x1f
@@ -282,6 +298,12 @@ trap:
     li   t1, 2
     beq  t0, t1, illegal_insn
 #endif
+#ifdef EMULATE_MISALIGNED
+    li   t1, 4
+    beq  t0, t1, misaligned
+    li   t1, 6
+    beq  t0, t1, misaligned
+#endif
     j    unexpected
 
 irq:
@@ -343,7 +365,276 @@ illegal_insn:
     la   t1, rd_table
     add  t1, t1, t0
     jr   t1
+#endif
 
+#ifdef EMULATE_MISALIGNED
+/* ---- Misaligned load and store -----------------------------------------
+ * A load or store that trapped for its misaligned address is done here a
+ * byte at a time, through the translation of the mode that trapped (MPRV);
+ * the instruction is read the same way, at mepc. A fault on the way goes to
+ * S-mode as it would have from that access (ma_fault). Atomics and anything
+ * else go to S-mode as they are.
+ *
+ *   s0  mepc         s1  mstatus at the trap
+ *   t4  instruction  t5  bytes | MA_SIGNED | MA_FP    t6  register
+ *   t0  address      t3  the value; t1, t2 scratch */
+#define MSTATUS_MPRV (1 << 17)
+#define MSTATUS_MXR  (1 << 19)
+#define MA_SIGNED    16
+#define MA_FP        32
+misaligned:
+    csrr s1, mstatus
+    srli t1, s1, 11
+    andi t1, t1, 3
+    li   t2, 3
+    beq  t1, t2, unexpected
+    csrr s0, mepc
+    la   t1, ma_fault
+    csrw mtvec, t1
+    /* The instruction, in halves: mepc may be 2 bytes from a page end. */
+    li   t1, MSTATUS_MPRV | MSTATUS_MXR
+    csrs mstatus, t1
+    lhu  t4, 0(s0)
+    andi t2, t4, 3
+    li   t3, 3
+    bne  t2, t3, 1f
+    lhu  t2, 2(s0)
+    slli t2, t2, 16
+    or   t4, t4, t2
+1:  csrc mstatus, t1
+
+    andi t1, t4, 3
+    li   t2, 3
+    bne  t1, t2, ma_compressed
+    /* 32 bits: t1 = funct3, t2 = opcode */
+    srli t1, t4, 12
+    andi t1, t1, 7
+    andi t2, t4, 0x7f
+    li   t3, 0x03
+    beq  t2, t3, ma_int
+    li   t3, 0x23
+    beq  t2, t3, ma_int
+    li   t3, 0x07
+    beq  t2, t3, ma_fp
+    li   t3, 0x27
+    beq  t2, t3, ma_fp
+    j    ma_give_up
+ma_int:
+    /* lh lw ld lhu lwu, sh sw sd: 1 << funct3[1:0] bytes, signed below 4 */
+    andi t3, t1, 3
+    beqz t3, ma_give_up
+    li   t5, 1
+    sll  t5, t5, t3
+    li   t3, 4
+    bgeu t1, t3, ma_32
+    ori  t5, t5, MA_SIGNED
+    j    ma_32
+ma_fp:
+    /* flw fld, fsw fsd: funct3 2 and 3 (the others are vector) */
+    li   t3, 2
+    bltu t1, t3, ma_give_up
+    li   t3, 3
+    bgtu t1, t3, ma_give_up
+    li   t5, 1
+    sll  t5, t5, t1
+    ori  t5, t5, MA_FP
+ma_32:
+    li   t3, 0x20               /* the store bit of the opcode */
+    and  t3, t4, t3
+    bnez t3, 1f
+    srli t6, t4, 7              /* rd */
+    andi t6, t6, 31
+    j    ma_load
+1:  srli t6, t4, 20             /* rs2 */
+    andi t6, t6, 31
+    j    ma_store
+
+ma_compressed:
+    /* quadrant 0: c.fld c.lw c.ld, c.fsd c.sw c.sd with rd'/rs2' in [4:2];
+     * quadrant 2: the same off sp, rd in [11:7], rs2 in [6:2].
+     * funct3[1:0]: 1 fld/fsd, 2 lw/sw, 3 ld/sd; funct3[2]: store. */
+    srli t2, t4, 13
+    andi t2, t2, 7
+    andi t3, t2, 3
+    beqz t3, ma_give_up
+    li   t5, 8
+    li   t0, 2
+    bne  t3, t0, 1f
+    li   t5, 4 | MA_SIGNED
+1:  li   t0, 1
+    bne  t3, t0, 1f
+    ori  t5, t5, MA_FP
+1:  beqz t1, ma_q0
+    li   t0, 2
+    bne  t1, t0, ma_give_up
+    andi t0, t2, 4
+    bnez t0, 1f
+    srli t6, t4, 7
+    andi t6, t6, 31
+    j    ma_load
+1:  srli t6, t4, 2
+    andi t6, t6, 31
+    j    ma_store
+ma_q0:
+    srli t6, t4, 2
+    andi t6, t6, 7
+    addi t6, t6, 8
+    andi t0, t2, 4
+    bnez t0, ma_store
+
+ma_load:
+    csrr t0, mtval
+    li   t1, MSTATUS_MPRV
+    csrs mstatus, t1
+    andi t1, t5, 15
+    li   t3, 0
+1:  addi t1, t1, -1
+    add  t2, t0, t1
+    lbu  t2, 0(t2)
+    slli t3, t3, 8
+    or   t3, t3, t2
+    bnez t1, 1b
+    li   t1, MSTATUS_MPRV
+    csrc mstatus, t1
+    andi t1, t5, MA_SIGNED
+    beqz t1, 1f
+    andi t1, t5, 15
+    slli t1, t1, 3
+    li   t2, 64
+    sub  t1, t2, t1
+    sll  t3, t3, t1
+    sra  t3, t3, t1
+1:  jal  ma_done
+    /* to the register: rd_table, or fw_table / fd_table */
+    slli t1, t6, 3
+    la   t0, rd_table
+    andi t2, t5, MA_FP
+    beqz t2, 1f
+    la   t0, fd_table
+    andi t2, t5, 4
+    beqz t2, 1f
+    la   t0, fw_table
+1:  add  t0, t0, t1
+    jr   t0
+
+ma_store:
+    /* the value from the register: rs_table, or fsw_table / fsd_table */
+    slli t1, t6, 3
+    la   t0, rs_table
+    andi t2, t5, MA_FP
+    beqz t2, 1f
+    la   t0, fsd_table
+    andi t2, t5, 4
+    beqz t2, 1f
+    la   t0, fsw_table
+1:  add  t0, t0, t1
+    jalr t0
+    csrr t0, mtval
+    andi t1, t5, 15
+    add  t1, t0, t1
+    li   t2, MSTATUS_MPRV
+    csrs mstatus, t2
+1:  sb   t3, 0(t0)
+    srli t3, t3, 8
+    addi t0, t0, 1
+    bne  t0, t1, 1b
+    li   t2, MSTATUS_MPRV
+    csrc mstatus, t2
+    jal  ma_done
+    j    trap_return
+
+/* Done: the usual trap vector again, and mepc past the instruction. */
+ma_done:
+    la   t1, trap
+    csrw mtvec, t1
+    addi t1, s0, 2
+    andi t2, t4, 3
+    xori t2, t2, 3
+    bnez t2, 1f
+    addi t1, t1, 2
+1:  csrw mepc, t1
+    ret
+
+ma_give_up:
+    la   t1, trap
+    csrw mtvec, t1
+    j    redirect
+
+/* An access of the emulation faulted (a trap from M-mode, so mepc, mcause
+ * and mstatus are new): put back the trap being emulated, with this fault's
+ * cause and address, and hand that to S-mode. */
+    .balign 4
+ma_fault:
+    csrr t0, mcause
+    csrr t1, mtval
+    la   t2, trap
+    csrw mtvec, t2
+    csrw mstatus, s1
+    csrw mepc, s0
+    csrw mcause, t0
+    csrw mtval, t1
+    j    redirect
+
+/* Read register n into t3, and return to ra. */
+    .option push
+    .option norvc
+rs_table:
+    li   t3, 0;        ret              /* x0 */
+    ld   t3, 0(sp);    ret              /* ra */
+    csrr t3, mscratch; ret              /* sp */
+    mv   t3, gp;       ret
+    mv   t3, tp;       ret
+    ld   t3, 8(sp);    ret              /* t0 */
+    ld   t3, 16(sp);   ret              /* t1 */
+    ld   t3, 24(sp);   ret              /* t2 */
+    ld   t3, 64(sp);   ret              /* s0 */
+    ld   t3, 72(sp);   ret              /* s1 */
+    mv   t3, a0;       ret
+    mv   t3, a1;       ret
+    mv   t3, a2;       ret
+    mv   t3, a3;       ret
+    mv   t3, a4;       ret
+    mv   t3, a5;       ret
+    mv   t3, a6;       ret
+    mv   t3, a7;       ret
+    mv   t3, s2;       ret
+    mv   t3, s3;       ret
+    mv   t3, s4;       ret
+    mv   t3, s5;       ret
+    mv   t3, s6;       ret
+    mv   t3, s7;       ret
+    mv   t3, s8;       ret
+    mv   t3, s9;       ret
+    mv   t3, s10;      ret
+    mv   t3, s11;      ret
+    ld   t3, 32(sp);   ret              /* t3 */
+    ld   t3, 40(sp);   ret              /* t4 */
+    ld   t3, 48(sp);   ret              /* t5 */
+    ld   t3, 56(sp);   ret              /* t6 */
+
+/* The same for the FP registers: write fN from t3 (single, double), read
+ * t3 from fN (single, double). */
+    .option arch, +d
+fw_table:
+    .irp n, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
+    fmv.w.x f\n, t3;   j trap_return
+    .endr
+fd_table:
+    .irp n, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
+    fmv.d.x f\n, t3;   j trap_return
+    .endr
+fsw_table:
+    .irp n, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
+    fmv.x.w t3, f\n;   ret
+    .endr
+fsd_table:
+    .irp n, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
+    fmv.x.d t3, f\n;   ret
+    .endr
+    .option pop
+#endif
+
+#if defined(EMULATE_TIME) || defined(EMULATE_MISALIGNED)
 /* Write t3 to register n. Registers the trap entry saved are written in
  * their slots, so trap_return loads them; sp is in mscratch. */
     .option push
