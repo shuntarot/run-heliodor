@@ -15,6 +15,11 @@
  * NHARTS harts (default 1) all start here. Hart 0 starts the kernel; the
  * others wait in M-mode until the kernel starts them with the SBI HSM
  * extension. IPIs and remote fences go through the CLINT's msip.
+ *
+ * Built with -DEMULATE_TIME, it serves a core that has no `time` CSR (such
+ * as Rocket): reading it traps to M-mode, and the firmware answers with the
+ * CLINT's mtime. Any other illegal instruction goes on to S-mode as if it
+ * had been delegated. The core must put the instruction in mtval.
  */
 
 #ifndef DTB_ADDR
@@ -26,6 +31,7 @@
 
 #define CLINT_MSIP     0x02000000
 #define CLINT_MTIMECMP 0x02004000
+#define CLINT_MTIME    0x0200BFF8
 #define KERNEL_ENTRY   0x80200000
 
 #define SBI_EXT_BASE   0x10
@@ -133,8 +139,13 @@ _start:
     csrw scounteren, t0
 
     /* Misaligned access, illegal instruction, breakpoint, ecall from U and
-     * page faults go to S-mode. */
+     * page faults go to S-mode. With EMULATE_TIME, illegal instructions come
+     * here first (illegal_insn). */
+#ifdef EMULATE_TIME
+    li   t0, (1 << 3) | (1 << 4) | (1 << 6) | (1 << 8) | (1 << 12) | (1 << 13) | (1 << 15)
+#else
     li   t0, (1 << 2) | (1 << 3) | (1 << 4) | (1 << 6) | (1 << 8) | (1 << 12) | (1 << 13) | (1 << 15)
+#endif
     csrw medeleg, t0
     /* Supervisor software, timer and external interrupts go to S-mode. */
     li   t0, 0x222
@@ -267,6 +278,10 @@ trap:
     bltz t0, irq
     li   t1, 9
     beq  t0, t1, ecall
+#ifdef EMULATE_TIME
+    li   t1, 2
+    beq  t0, t1, illegal_insn
+#endif
     j    unexpected
 
 irq:
@@ -305,6 +320,100 @@ msip_irq:
     li   t0, MIP_SSIP
     csrs mip, t0
     j    trap_return
+
+#ifdef EMULATE_TIME
+/* ---- Illegal instruction ------------------------------------------------
+ * `csrrs rd, time, x0` (rdtime) gets mtime in rd. Anything else goes to
+ * S-mode. */
+illegal_insn:
+    csrr t0, mtval
+    li   t1, 0xFFFFF07F
+    and  t2, t0, t1
+    li   t1, 0xC0102073
+    bne  t2, t1, redirect
+    li   t1, CLINT_MTIME
+    ld   t3, 0(t1)
+    csrr t1, mepc
+    addi t1, t1, 4
+    csrw mepc, t1
+    /* Jump to the entry of rd: two instructions each. */
+    srli t0, t0, 7
+    andi t0, t0, 31
+    slli t0, t0, 3
+    la   t1, rd_table
+    add  t1, t1, t0
+    jr   t1
+
+/* Write t3 to register n. Registers the trap entry saved are written in
+ * their slots, so trap_return loads them; sp is in mscratch. */
+    .option push
+    .option norvc
+rd_table:
+    nop;               j trap_return    /* x0 */
+    sd   t3, 0(sp);    j trap_return    /* ra */
+    csrw mscratch, t3; j trap_return    /* sp */
+    mv   gp, t3;       j trap_return
+    mv   tp, t3;       j trap_return
+    sd   t3, 8(sp);    j trap_return    /* t0 */
+    sd   t3, 16(sp);   j trap_return    /* t1 */
+    sd   t3, 24(sp);   j trap_return    /* t2 */
+    sd   t3, 64(sp);   j trap_return    /* s0 */
+    sd   t3, 72(sp);   j trap_return    /* s1 */
+    mv   a0, t3;       j trap_return
+    mv   a1, t3;       j trap_return
+    mv   a2, t3;       j trap_return
+    mv   a3, t3;       j trap_return
+    mv   a4, t3;       j trap_return
+    mv   a5, t3;       j trap_return
+    mv   a6, t3;       j trap_return
+    mv   a7, t3;       j trap_return
+    mv   s2, t3;       j trap_return
+    mv   s3, t3;       j trap_return
+    mv   s4, t3;       j trap_return
+    mv   s5, t3;       j trap_return
+    mv   s6, t3;       j trap_return
+    mv   s7, t3;       j trap_return
+    mv   s8, t3;       j trap_return
+    mv   s9, t3;       j trap_return
+    mv   s10, t3;      j trap_return
+    mv   s11, t3;      j trap_return
+    sd   t3, 32(sp);   j trap_return    /* t3 */
+    sd   t3, 40(sp);   j trap_return    /* t4 */
+    sd   t3, 48(sp);   j trap_return    /* t5 */
+    sd   t3, 56(sp);   j trap_return    /* t6 */
+    .option pop
+
+/* Hand the trap to S-mode, as a delegated one would go: sepc, scause and
+ * stval from the M-mode ones, SPP from MPP, SPIE from SIE, SIE off, and on
+ * to stvec in S-mode. A trap from M-mode itself is unexpected. */
+redirect:
+    csrr t0, mstatus
+    srli t1, t0, 11
+    andi t1, t1, 3
+    li   t2, 3
+    beq  t1, t2, unexpected
+    li   t2, ~((1 << 8) | (1 << 5) | (1 << 1) | (3 << 11))
+    and  t3, t0, t2
+    beqz t1, 1f
+    li   t2, 1 << 8
+    or   t3, t3, t2
+1:  andi t2, t0, 1 << 1
+    slli t2, t2, 4
+    or   t3, t3, t2
+    li   t2, 1 << 11
+    or   t3, t3, t2
+    csrw mstatus, t3
+    csrr t0, mepc
+    csrw sepc, t0
+    csrr t0, mcause
+    csrw scause, t0
+    csrr t0, mtval
+    csrw stval, t0
+    csrr t0, stvec
+    andi t0, t0, -4
+    csrw mepc, t0
+    j    trap_return
+#endif
 
 /* ---- SBI ---------------------------------------------------------------- */
 ecall:
