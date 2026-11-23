@@ -27,6 +27,23 @@
  *
  * Built with -DPMP, it lets S-mode and U-mode reach all memory through PMP
  * entry 0, for a core that has PMP.
+ *
+ * Built with -DHPM_EVENTS, it sets heliodor's hardware performance counters
+ * to count its seven events, and lets S-mode and U-mode read them
+ * (hpmcounter3 to hpmcounter16). mhpmevent's low four bits pick the event:
+ *
+ *   1  a mispredicted control transfer retires
+ *   2  the front end is redirected (the pipeline is flushed)
+ *   3  dispatch is idle: the front end gives it nothing
+ *   4  dispatch stalls for a resource
+ *   5  the memory port accepts a request
+ *   6  nothing retires
+ *   7  a load waits for a fill
+ *
+ * hpmcounter3 to 9 count events 1 to 7 in every mode; hpmcounter10 to 16
+ * count them again in U-mode only (Sscofpmf's MINH and SINH set). Each
+ * counts cycles in which its event happens. Other cores may not have the
+ * counters: leave it out for them.
  */
 
 #ifndef DTB_ADDR
@@ -154,8 +171,62 @@ _start:
      * reads time from U-mode: without this, gettimeofday is an illegal
      * instruction. */
     li   t0, 7
+#ifdef HPM_EVENTS
+    /* And hpmcounter3 to 16, set up below. */
+    li   t1, 0x1fff8
+    or   t0, t0, t1
+#endif
     csrw mcounteren, t0
     csrw scounteren, t0
+
+#ifdef HPM_EVENTS
+    /* Events 1 to 7 on mhpmevent3 to 9, then U-mode only on 10 to 16
+     * (MINH, bit 62, and SINH, bit 61). Zero the counters. */
+    li   t0, 1
+    csrw mhpmevent3, t0
+    csrw mhpmcounter3, zero
+    li   t0, 2
+    csrw mhpmevent4, t0
+    csrw mhpmcounter4, zero
+    li   t0, 3
+    csrw mhpmevent5, t0
+    csrw mhpmcounter5, zero
+    li   t0, 4
+    csrw mhpmevent6, t0
+    csrw mhpmcounter6, zero
+    li   t0, 5
+    csrw mhpmevent7, t0
+    csrw mhpmcounter7, zero
+    li   t0, 6
+    csrw mhpmevent8, t0
+    csrw mhpmcounter8, zero
+    li   t0, 7
+    csrw mhpmevent9, t0
+    csrw mhpmcounter9, zero
+    li   t1, 3 << 61
+    li   t0, 1
+    or   t0, t0, t1
+    csrw mhpmevent10, t0
+    csrw mhpmcounter10, zero
+    addi t0, t0, 1
+    csrw mhpmevent11, t0
+    csrw mhpmcounter11, zero
+    addi t0, t0, 1
+    csrw mhpmevent12, t0
+    csrw mhpmcounter12, zero
+    addi t0, t0, 1
+    csrw mhpmevent13, t0
+    csrw mhpmcounter13, zero
+    addi t0, t0, 1
+    csrw mhpmevent14, t0
+    csrw mhpmcounter14, zero
+    addi t0, t0, 1
+    csrw mhpmevent15, t0
+    csrw mhpmcounter15, zero
+    addi t0, t0, 1
+    csrw mhpmevent16, t0
+    csrw mhpmcounter16, zero
+#endif
 
     /* Misaligned access, illegal instruction, breakpoint, ecall from U and
      * page faults go to S-mode. With EMULATE_TIME, illegal instructions come
