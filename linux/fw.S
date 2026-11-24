@@ -248,6 +248,12 @@ _start:
     la   t0, s_trap
     csrw stvec, t0
 
+    /* S-mode starts with translation off. Some cores do not reset satp
+     * (Rocket's comes up as whatever the flops hold on a chip), and with a
+     * stray mode S-mode would fault on its first fetch, again and again. */
+    csrw satp, zero
+    sfence.vma
+
 #if defined(QEMU) || defined(PMP)
     /* A core with PMP (QEMU, Rocket; -DPMP) denies S-mode everything
      * until an entry allows it. heliodor has none. */
