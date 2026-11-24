@@ -19,7 +19,8 @@
  * Built with -DEMULATE_TIME, it serves a core that has no `time` CSR (such
  * as Rocket): reading it traps to M-mode, and the firmware answers with the
  * CLINT's mtime. Any other illegal instruction goes on to S-mode as if it
- * had been delegated. The core must put the instruction in mtval.
+ * had been delegated. The firmware reads the instruction from mtval, or at
+ * mepc when the core leaves mtval 0 (BOOM does).
  *
  * Built with -DEMULATE_MISALIGNED, it does in M-mode the loads and stores
  * the core traps on for a misaligned address (Rocket does): Linux expects
@@ -426,7 +427,23 @@ msip_irq:
  * S-mode. */
 illegal_insn:
     csrr t0, mtval
-    li   t1, 0xFFFFF07F
+    bnez t0, 2f
+    /* A core may leave mtval 0 (BOOM does): then read the instruction at
+     * mepc, through the translation of the mode that trapped (MPRV, and MXR
+     * for an execute-only page). It was just fetched, so this does not
+     * fault. In halves: mepc may be 2 bytes from a page end. */
+    csrr t3, mepc
+    li   t1, (1 << 17) | (1 << 19)
+    csrs mstatus, t1
+    lhu  t0, 0(t3)
+    andi t2, t0, 3
+    li   t4, 3
+    bne  t2, t4, 1f
+    lhu  t2, 2(t3)
+    slli t2, t2, 16
+    or   t0, t0, t2
+1:  csrc mstatus, t1
+2:  li   t1, 0xFFFFF07F
     and  t2, t0, t1
     li   t1, 0xC0102073
     bne  t2, t1, redirect
