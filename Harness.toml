@@ -15,6 +15,8 @@ depth    = "256M"   # words of 8 bytes
 aperture = "1M"
 dut_base = 0x8000_0000
 ports    = ["mem"]
+# A fixed DRAM latency, set at run time (mem_rd_latency, mem_wr_latency).
+model    = true
 
 # The Debug Module's DMI. `hio cpu` finds it here. Its reset is the
 # harness's own, so `hio reset` leaves the debugger's state alone.

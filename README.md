@@ -67,6 +67,17 @@ hio --regs hns/vcu118/regs.json run bringup.hio
 The window is on JTAG and on PCIe. PCIe is faster: add `-p` and run `hio` as
 root (`sudo "$(command -v hio)" -p ...`).
 
+The memory port has the harness's latency model (`model = true` in
+`Harness.toml` and `Harness.smp4.toml`), to run the core against a slower
+memory, such as an ASIC's DRAM at its own clock. With nothing set it adds
+one cycle; this holds every read and write for 160 cycles at the core's AXI
+port:
+
+```bash
+hio --regs hns/vcu118/regs.json write mem_rd_latency 160
+hio --regs hns/vcu118/regs.json write mem_wr_latency 160
+```
+
 Firmware runs with `cargo run -p <app>`, and Linux with
 `hio cpu boot linux/linux.elf`:
 
@@ -77,13 +88,13 @@ Firmware runs with `cargo run -p <app>`, and Linux with
 ## Size
 
 LUT and FF counts, block RAM in 36 Kb blocks, after place and route. The
-core is the DUT alone; the design adds the harness and the board's memory
-controller.
+core is the DUT alone; the design adds the harness, with the memory latency
+model (`model = true`), and the board's memory controller.
 
 | Board | Clock | Core LUT / FF / BRAM / DSP | Design LUT / FF / BRAM / DSP |
 |---|---|---|---|
-| VCU118, PCIe | 20 MHz | 370,431 / 144,495 / 32 / 40 | 406,101 / 182,987 / 79.5 / 43 |
-| VU440, PCIe, four harts | 10 MHz | 1,368,208 / 555,974 / 32 / 160 | 1,407,967 / 590,487 / 66.5 / 163 |
+| VCU118, PCIe | 20 MHz | 370,437 / 144,510 / 32 / 40 | 409,061 / 185,616 / 79.5 / 43 |
+| VU440, PCIe, four harts | 10 MHz | 1,368,689 / 556,032 / 32 / 160 | 1,411,284 / 593,188 / 66.5 / 163 |
 
 ## Files
 

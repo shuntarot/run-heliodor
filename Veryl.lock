@@ -7,12 +7,12 @@ name = "hns"
 dependencies = []
 
 [projects.source]
-uuid = "9e512fae-eee7-5e84-9e18-2bc2fba27184"
+uuid = "2d93f244-e8d9-5cc6-9410-5286885854de"
 url = "https://github.com/shuntarot/uharness"
 path = "rtl/hns"
 project = "hns"
-version = "0.13.1"
-revision = "94b0027880e7d3c15fb86268fd4f21bb3fb47adc"
+version = "0.15.0"
+revision = "f57e837521c230cac7c4e2aac5cfde9eb85bf021"
 
 [projects.properties]
 
