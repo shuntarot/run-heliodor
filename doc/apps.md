@@ -13,6 +13,7 @@ cargo run -p console
 cargo run-emu -p console   # the same on QEMU's virt machine
 cargo run --release -p memlat
 cargo run --release -p membw
+cargo run --release -p membwv
 cargo run --release -p issue
 ```
 
@@ -22,6 +23,7 @@ cargo run --release -p issue
 | `console` | prints the core's ID and counters, then echoes what you type |
 | `memlat` | measures load latency |
 | `membw` | measures bandwidth |
+| `membwv` | measures bandwidth with vector loads and stores |
 | `issue` | measures what controlling the system through registers costs |
 
 ## memlat
@@ -68,6 +70,28 @@ working set. The program prints MB/s at 20 MHz, the clock of one hart.
   DRAM without being read first.
 - With the arrays back to back, the same element of each falls in the same
   cache set, and Triad drops by a third.
+
+## membwv
+
+`membw`'s tests again with the vector unit (RVV 1.0, 64-bit elements):
+loads alone and stores alone at LMUL 1 (16 bytes an instruction) and LMUL 4
+(64 bytes, one line), then the STREAM kernels at LMUL 4. It turns the
+vector unit on (`mstatus.VS`), checks the loads' sum against a scalar loop,
+and checks the stores and the STREAM results. Bytes per core cycle on the
+VCU118, one hart, DRAM held at 160 cycles, with `membw` run beside it:
+
+| | Scalar | Vector, LMUL 1 | Vector, LMUL 4 |
+|---|---|---|---|
+| Loads, L1 D-cache (4–16 KB) | 4.62–5.15 | 0.51 | 0.74 |
+| Loads, L2 (32–128 KB) | 3.51–3.92 | 0.45–0.46 | 0.63 |
+| Loads, DRAM (256 KB and up) | 0.34 | 0.20 | 0.23 |
+| Stores, 4 KB–128 KB | 0.75 | 0.39 | 0.72 |
+| Stores, DRAM | 0.74 | 0.20 | 0.32 |
+| STREAM Copy / Triad, one line apart | 0.68 / 0.51 | - | 0.28 / 0.25 |
+
+- The vector unit moves memory one element at a time: about 11 cycles an
+  element from the L1 D-cache at LMUL 4. Scalar code is faster at every
+  level.
 
 ## issue
 
