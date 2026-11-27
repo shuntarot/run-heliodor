@@ -89,12 +89,13 @@ Firmware runs with `cargo run -p <app>`, and Linux with
 
 LUT and FF counts, block RAM in 36 Kb blocks, after place and route. The
 core is the DUT alone; the design adds the harness, with the memory latency
-model (`model = true`), and the board's memory controller.
+model (`model = true`), and the board's memory controller. On the VCU118 the
+core also takes one UltraRAM.
 
 | Board | Clock | Core LUT / FF / BRAM / DSP | Design LUT / FF / BRAM / DSP |
 |---|---|---|---|
-| VCU118, PCIe | 20 MHz | 370,437 / 144,510 / 32 / 40 | 409,061 / 185,616 / 79.5 / 43 |
-| VU440, PCIe, four harts | 10 MHz | 1,368,689 / 556,032 / 32 / 160 | 1,411,284 / 593,188 / 66.5 / 163 |
+| VCU118, PCIe | 20 MHz | 325,836 / 102,891 / 59.5 / 348 | 365,707 / 143,999 / 107 / 351 |
+| VU440, PCIe, four harts | 10 MHz | 1,282,907 / 396,105 / 150 / 1,396 | 1,331,077 / 433,286 / 184.5 / 1,399 |
 
 ## Files
 
