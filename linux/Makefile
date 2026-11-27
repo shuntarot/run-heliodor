@@ -41,13 +41,14 @@ ELF = $(LINUX_CROSS)gcc -march=rv64imac_zicsr_zifencei -mabi=lp64 -nostdlib -sta
 	-DDTB_ADDR=$(DTB_ADDR) -Wl,--defsym=DTB_ADDR=$(DTB_ADDR) \
 	-DDTB_FILE='"$(B)/$(2).dtb"' -DNHARTS=$(1) $(3) -T link.ld -o $@ fw.S image.S
 
-# The VCU118: one hart at 20 MHz.
+# The VCU118: one hart at 20 MHz. heliodor has PMP: an S-mode or U-mode
+# access that no entry matches faults.
 linux.elf: fw.S image.S link.ld $(B)/Image $(B)/heliodor.dtb
-	$(call ELF,1,heliodor)
+	$(call ELF,1,heliodor,-DPMP)
 
 # Four harts at 10 MHz: the fp1.
 linux-smp4.elf: fw.S image.S link.ld $(B)/Image $(B)/heliodor-smp4.dtb
-	$(call ELF,4,heliodor-smp4)
+	$(call ELF,4,heliodor-smp4,-DPMP)
 
 # linux-smp4.elf's, on QEMU's `virt` machine with four harts: the console is its
 # UART, and the exit status ends QEMU. Ctrl-A x leaves.

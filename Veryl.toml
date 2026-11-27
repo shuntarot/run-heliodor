@@ -12,7 +12,7 @@ evaluate_size_limit = 16777216
 [dependencies]
 # heliodor cannot be published (`veryl publish` fails on its lint warnings),
 # and a git dependency needs a published version. Clone
-# https://github.com/shuntarot/heliodor next to this repository instead.
+# https://github.com/dalance/heliodor next to this repository instead (README).
 heliodor = { path = "../heliodor" }
 hns      = { git = "https://github.com/shuntarot/uharness", project = "hns", version = "0.15.0" }
 

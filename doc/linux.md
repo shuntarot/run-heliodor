@@ -29,4 +29,5 @@ and does not do them itself in S-mode. A fault on the way goes to S-mode as
 that access's page fault; a misaligned atomic goes to S-mode as it is.
 
 With `-DPMP`, it opens all memory to S-mode and U-mode through PMP entry 0,
-for a core that has PMP (Rocket does).
+for a core that has PMP (Rocket and heliodor do; `linux.elf` and
+`linux-smp4.elf` are built with it).

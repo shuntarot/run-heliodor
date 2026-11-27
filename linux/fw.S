@@ -256,8 +256,8 @@ _start:
     sfence.vma
 
 #if defined(QEMU) || defined(PMP)
-    /* A core with PMP (QEMU, Rocket; -DPMP) denies S-mode everything
-     * until an entry allows it. heliodor has none. */
+    /* A core with PMP (QEMU, Rocket, BOOM, heliodor; -DPMP) denies S-mode
+     * everything until an entry allows it. */
     li   t0, -1
     csrw pmpaddr0, t0
     li   t0, 0x1f

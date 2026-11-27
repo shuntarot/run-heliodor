@@ -31,10 +31,10 @@ cached. `hio cpu mem --sba` reads cached memory as the core sees it.
 ## Requirements
 
 - Veryl, with `veryl-harness` and `hio` from veryl-harness
-- [shuntarot/heliodor](https://github.com/shuntarot/heliodor), branch `fpga`,
+- [heliodor](https://github.com/dalance/heliodor) at commit `9eac6e91`,
   cloned beside this directory
-  (`git clone -b fpga https://github.com/shuntarot/heliodor ../heliodor`).
-  The branch makes the L2, the cache tags and the BTB fit FPGA block RAM
+  (`git clone https://github.com/dalance/heliodor ../heliodor`, then
+  `git -C ../heliodor checkout 9eac6e91`)
 - Vivado and a VCU118, for the board
 - Rust through rustup, for the firmware
 - `riscv64-unknown-elf-gcc` for `asm/` and riscv-tests;
